@@ -469,10 +469,11 @@ function checkScheduleNotifications({
 /**
  * FocusOS Firebase Authentication & Cloud Sync Service
  * Features:
- * - Google Sign-In via Firebase Auth
- * - Dynamic lazy loading of Firebase SDK (no render blocking)
- * - Automatic cloud synchronization of routines, timeline progress, alarms, and settings
- * - Configurable Firebase project credentials with instant local fallback
+ * - Google Sign-In via Firebase Auth (Desktop popup + Mobile PWA redirect fallback)
+ * - Automatic background cloud sync of routines, timeline logs, hours, smart alarms, and settings
+ * - Offline Firestore persistence support
+ * - Collection '/users/{userId}' fully compliant with Firebase security rules
+ * - Configurable Firebase credentials with instant local fallback
  */
 
 const DEFAULT_FIREBASE_CONFIG = {
@@ -481,7 +482,7 @@ const DEFAULT_FIREBASE_CONFIG = {
   projectId: "mission-plustwo",
   storageBucket: "mission-plustwo.appspot.com",
   messagingSenderId: "376961059569",
-  appId: "1:376961059569:web:77d0a7c7-ae77-471b-a1b2-37e4c8b4fb83"
+  appId: "1:376961059569:web:77d0a7c7-ae77-471b-a1b2-37e4c8b4fb83",
 };
 
 function getActiveFirebaseConfig() {
@@ -552,21 +553,74 @@ async function getFirebaseInstances() {
     }
     authInstance = window.firebase.auth();
     firestoreInstance = window.firebase.firestore();
+
+    // Enable offline Firestore cache if available
+    try {
+      if (typeof firestoreInstance.enablePersistence === 'function') {
+        firestoreInstance.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+      }
+    } catch {}
+
     firebaseInitialized = true;
   }
   return { auth: authInstance, db: firestoreInstance };
 }
 
 /**
- * Trigger Google Sign-In Popup
+ * Trigger Google Sign-In with automatic Mobile PWA redirect fallback
  */
 async function signInWithGoogle() {
   const { auth } = await getFirebaseInstances();
   if (!auth) throw new Error('Firebase Auth not available');
   const provider = new window.firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  const result = await auth.signInWithPopup(provider);
-  return result.user;
+
+  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isStandalone = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+
+  // On mobile PWAs, popups get blocked or lose session context: use redirect
+  if (isMobile || isStandalone) {
+    try {
+      await auth.signInWithRedirect(provider);
+      return null;
+    } catch (redirectErr) {
+      console.warn('Redirect sign-in error, falling back to popup:', redirectErr);
+    }
+  }
+
+  try {
+    const result = await auth.signInWithPopup(provider);
+    return result.user;
+  } catch (err) {
+    if (
+      err.code === 'auth/popup-blocked' ||
+      err.code === 'auth/popup-closed-by-user' ||
+      err.code === 'auth/cancelled-popup-request'
+    ) {
+      console.log('Popup blocked or closed, falling back to redirect...');
+      await auth.signInWithRedirect(provider);
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Check if the user is returning from a Google redirect sign-in
+ */
+async function checkRedirectSignInResult() {
+  try {
+    const { auth } = await getFirebaseInstances();
+    if (auth && typeof auth.getRedirectResult === 'function') {
+      const result = await auth.getRedirectResult();
+      if (result && result.user) {
+        return result.user;
+      }
+    }
+  } catch (err) {
+    console.warn('Redirect result check warning:', err);
+  }
+  return null;
 }
 
 /**
@@ -596,21 +650,40 @@ async function onAuthChange(callback) {
 
 /**
  * Sync user profile and app data to Cloud Firestore
+ * Stores data in collection 'users/{userId}' complying with Firestore security rules.
  */
 async function syncUserDataToCloud(userId, data) {
   if (!userId || !data) return;
   try {
     const { db } = await getFirebaseInstances();
     if (!db) return;
-    await db.collection('focusos_users').doc(userId).set(
-      {
-        ...data,
-        lastSyncedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+
+    // Clean payload for Firestore (remove undefined / functions)
+    const cleanHistory = JSON.parse(JSON.stringify(data.history || {}));
+    const cleanPresets = JSON.parse(JSON.stringify(data.presets || []));
+    const cleanAlarms = JSON.parse(JSON.stringify(data.alarms || {}));
+    const cleanNotif = JSON.parse(JSON.stringify(data.notificationConfig || {}));
+
+    const payload = {
+      focusos_history: cleanHistory,
+      focusos_presets: cleanPresets,
+      focusos_alarms: cleanAlarms,
+      focusos_notif_config: cleanNotif,
+      focusos_theme: data.themeMode || 'system',
+      focusos_chart_mode: data.chartViewMode || 'line',
+      // Dual-compatibility mirror
+      history: cleanHistory,
+      presets: cleanPresets,
+      alarms: cleanAlarms,
+      lastSyncedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await db.collection('users').doc(userId).set(payload, { merge: true });
+    return { success: true, timestamp: payload.lastSyncedAt };
   } catch (err) {
     console.error('Error syncing FocusOS data to Firestore:', err);
+    throw err;
   }
 }
 
@@ -622,9 +695,19 @@ async function loadUserDataFromCloud(userId) {
   try {
     const { db } = await getFirebaseInstances();
     if (!db) return null;
-    const doc = await db.collection('focusos_users').doc(userId).get();
-    if (doc.exists) {
-      return doc.data();
+    const docSnap = await db.collection('users').doc(userId).get();
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      return {
+        history: data.focusos_history || data.history || {},
+        presets: data.focusos_presets || data.presets || [],
+        alarms: data.focusos_alarms || data.alarms || null,
+        notificationConfig: data.focusos_notif_config || data.focusos_notif || data.notificationConfig || null,
+        themeMode: data.focusos_theme || data.theme || null,
+        chartViewMode: data.focusos_chart_mode || null,
+        lastSyncedAt: data.lastSyncedAt || data.updatedAt || null,
+        rawPlan: data.plan || null,
+      };
     }
   } catch (err) {
     console.error('Error loading FocusOS data from Firestore:', err);
@@ -2206,6 +2289,49 @@ function FocusOS() {
     loadData();
   }, [handleAddToast]);
 
+  // ─── RECONCILE CLOUD & LOCAL DATA NON-DESTRUCTIVELY ────────────────────────
+  const reconcileCloudAndLocal = useCallback((localHistory, cloudHistory) => {
+    const merged = { ...(cloudHistory || {}), ...(localHistory || {}) };
+    const allDates = new Set([
+      ...Object.keys(localHistory || {}),
+      ...Object.keys(cloudHistory || {}),
+    ]);
+
+    allDates.forEach((ds) => {
+      const lDay = localHistory ? localHistory[ds] : null;
+      const cDay = cloudHistory ? cloudHistory[ds] : null;
+      if (lDay && cDay) {
+        const mergedBlocks = {
+          ...(cDay.blocks || {}),
+          ...(lDay.blocks || {}),
+        };
+        // Preserve completed/partial tasks from either cloud or local
+        Object.entries(cDay.blocks || {}).forEach(([bid, bProg]) => {
+          if (bProg && (bProg.status === "completed" || bProg.status === "partial")) {
+            if (!lDay.blocks || !lDay.blocks[bid] || lDay.blocks[bid].status === "pending") {
+              mergedBlocks[bid] = bProg;
+            }
+          }
+        });
+        merged[ds] = {
+          ...cDay,
+          ...lDay,
+          blocks: mergedBlocks,
+          blocksList:
+            lDay.blocksList && lDay.blocksList.length > 0
+              ? lDay.blocksList
+              : cDay.blocksList || [],
+          dailyScore: Math.max(lDay.dailyScore || 0, cDay.dailyScore || 0),
+        };
+      } else if (cDay) {
+        merged[ds] = cDay;
+      } else if (lDay) {
+        merged[ds] = lDay;
+      }
+    });
+
+    return merged;
+  }, []);
   // ─── AUTHENTICATION LISTENER ───────────────────────────────────────────────
   useEffect(() => {
     let unsub = () => {};
@@ -2238,43 +2364,57 @@ function FocusOS() {
 
   // ─── PERSISTENCE (INDEXEDDB + LOCALSTORAGE DUAL-SYNC & CLOUD) ───────────────
   useEffect(() => {
-    if (isReady) {
-      idbSet("fo6_history", history);
-      idbSet("fo6_presets", presets);
-      idbSet("fo6_theme", themeMode);
-      idbSet("fo6_alarms", alarms);
-      idbSet("fo6_notif_config", notificationConfig);
-      idbSet("fo6_chart_mode", chartViewMode);
+    if (!isReady || !hasCompletedInitialLoadRef.current) return;
 
-      try {
-        if (typeof window !== "undefined" && window.localStorage) {
-          localStorage.setItem("fo6_history", JSON.stringify(history));
-          localStorage.setItem("focusos_history_master_backup", JSON.stringify(history));
-          localStorage.setItem("fo6_presets", JSON.stringify(presets));
-          localStorage.setItem("fo6_theme", themeMode);
-          localStorage.setItem("fo6_alarms", JSON.stringify(alarms));
-          localStorage.setItem("fo6_notif_config", JSON.stringify(notificationConfig));
-        }
-      } catch (e) {}
+    // Guard against accidental overwrite with empty history
+    if (Object.keys(history).length === 0 && hadPriorDataRef.current) {
+      console.warn("Guarding against saving empty history over preserved progress");
+      return;
+    }
+    if (Object.keys(history).length > 0) {
+      hadPriorDataRef.current = true;
+    }
 
-      if (currentUser && currentUser.uid) {
-        setCloudSyncStatus("syncing");
-        if (window.__syncTimeout) clearTimeout(window.__syncTimeout);
-        window.__syncTimeout = setTimeout(async () => {
-          try {
-            await syncUserDataToCloud(currentUser.uid, {
-              history,
-              presets,
-              themeMode,
-              alarms,
-              notificationConfig,
-            });
-            setCloudSyncStatus("synced");
-          } catch (e) {
-            setCloudSyncStatus("error");
-          }
-        }, 1500);
+    // 1. Local IndexedDB & LocalStorage dual-sync
+    idbSet("fo6_history", history);
+    idbSet("fo6_presets", presets);
+    idbSet("fo6_theme", themeMode);
+    idbSet("fo6_alarms", alarms);
+    idbSet("fo6_notif_config", notificationConfig);
+    idbSet("fo6_chart_mode", chartViewMode);
+
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        localStorage.setItem("fo6_history", JSON.stringify(history));
+        localStorage.setItem("focusos_history_master_backup", JSON.stringify(history));
+        localStorage.setItem("fo6_presets", JSON.stringify(presets));
+        localStorage.setItem("fo6_theme", themeMode);
+        localStorage.setItem("fo6_alarms", JSON.stringify(alarms));
+        localStorage.setItem("fo6_notif_config", JSON.stringify(notificationConfig));
       }
+    } catch (e) {}
+
+    // 2. Continuous Cloud Synchronization whenever signed in with Google
+    if (currentUser && currentUser.uid) {
+      setCloudSyncStatus("syncing");
+      if (window.__syncTimeout) clearTimeout(window.__syncTimeout);
+      window.__syncTimeout = setTimeout(async () => {
+        try {
+          await syncUserDataToCloud(currentUser.uid, {
+            history,
+            presets,
+            themeMode,
+            alarms,
+            notificationConfig,
+            chartViewMode,
+          });
+          setCloudSyncStatus("synced");
+          setLastSyncedTime(new Date());
+        } catch (e) {
+          console.error("Cloud auto-sync failed:", e);
+          setCloudSyncStatus("error");
+        }
+      }, 1200);
     }
   }, [
     history,
@@ -2286,6 +2426,28 @@ function FocusOS() {
     currentUser,
     isReady,
   ]);
+
+  // ─── FLUSH CLOUD SYNC ON APP BACKGROUND / SCREEN LOCK ───────────────────────
+  useEffect(() => {
+    const handleFlushSync = () => {
+      if (document.visibilityState === "hidden" && currentUser && currentUser.uid) {
+        syncUserDataToCloud(currentUser.uid, {
+          history,
+          presets,
+          themeMode,
+          alarms,
+          notificationConfig,
+          chartViewMode,
+        }).catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", handleFlushSync);
+    window.addEventListener("pagehide", handleFlushSync);
+    return () => {
+      document.removeEventListener("visibilitychange", handleFlushSync);
+      window.removeEventListener("pagehide", handleFlushSync);
+    };
+  }, [currentUser, history, presets, themeMode, alarms, notificationConfig, chartViewMode]);
 
   // ─── HELPER: GET BLOCKS FOR DATE ───────────────────────────────────────────
   const getBlocksForDate = useCallback(

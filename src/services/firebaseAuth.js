@@ -1,10 +1,11 @@
 /**
  * FocusOS Firebase Authentication & Cloud Sync Service
  * Features:
- * - Google Sign-In via Firebase Auth
- * - Dynamic lazy loading of Firebase SDK (no render blocking)
- * - Automatic cloud synchronization of routines, timeline progress, alarms, and settings
- * - Configurable Firebase project credentials with instant local fallback
+ * - Google Sign-In via Firebase Auth (Desktop popup + Mobile PWA redirect fallback)
+ * - Automatic background cloud sync of routines, timeline logs, hours, smart alarms, and settings
+ * - Offline Firestore persistence support
+ * - Collection '/users/{userId}' fully compliant with Firebase security rules
+ * - Configurable Firebase credentials with instant local fallback
  */
 
 const DEFAULT_FIREBASE_CONFIG = {
@@ -13,7 +14,7 @@ const DEFAULT_FIREBASE_CONFIG = {
   projectId: "mission-plustwo",
   storageBucket: "mission-plustwo.appspot.com",
   messagingSenderId: "376961059569",
-  appId: "1:376961059569:web:77d0a7c7-ae77-471b-a1b2-37e4c8b4fb83"
+  appId: "1:376961059569:web:77d0a7c7-ae77-471b-a1b2-37e4c8b4fb83",
 };
 
 export function getActiveFirebaseConfig() {
@@ -84,21 +85,74 @@ export async function getFirebaseInstances() {
     }
     authInstance = window.firebase.auth();
     firestoreInstance = window.firebase.firestore();
+
+    // Enable offline Firestore cache if available
+    try {
+      if (typeof firestoreInstance.enablePersistence === 'function') {
+        firestoreInstance.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+      }
+    } catch {}
+
     firebaseInitialized = true;
   }
   return { auth: authInstance, db: firestoreInstance };
 }
 
 /**
- * Trigger Google Sign-In Popup
+ * Trigger Google Sign-In with automatic Mobile PWA redirect fallback
  */
 export async function signInWithGoogle() {
   const { auth } = await getFirebaseInstances();
   if (!auth) throw new Error('Firebase Auth not available');
   const provider = new window.firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  const result = await auth.signInWithPopup(provider);
-  return result.user;
+
+  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isStandalone = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+
+  // On mobile PWAs, popups get blocked or lose session context: use redirect
+  if (isMobile || isStandalone) {
+    try {
+      await auth.signInWithRedirect(provider);
+      return null;
+    } catch (redirectErr) {
+      console.warn('Redirect sign-in error, falling back to popup:', redirectErr);
+    }
+  }
+
+  try {
+    const result = await auth.signInWithPopup(provider);
+    return result.user;
+  } catch (err) {
+    if (
+      err.code === 'auth/popup-blocked' ||
+      err.code === 'auth/popup-closed-by-user' ||
+      err.code === 'auth/cancelled-popup-request'
+    ) {
+      console.log('Popup blocked or closed, falling back to redirect...');
+      await auth.signInWithRedirect(provider);
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Check if the user is returning from a Google redirect sign-in
+ */
+export async function checkRedirectSignInResult() {
+  try {
+    const { auth } = await getFirebaseInstances();
+    if (auth && typeof auth.getRedirectResult === 'function') {
+      const result = await auth.getRedirectResult();
+      if (result && result.user) {
+        return result.user;
+      }
+    }
+  } catch (err) {
+    console.warn('Redirect result check warning:', err);
+  }
+  return null;
 }
 
 /**
@@ -128,21 +182,40 @@ export async function onAuthChange(callback) {
 
 /**
  * Sync user profile and app data to Cloud Firestore
+ * Stores data in collection 'users/{userId}' complying with Firestore security rules.
  */
 export async function syncUserDataToCloud(userId, data) {
   if (!userId || !data) return;
   try {
     const { db } = await getFirebaseInstances();
     if (!db) return;
-    await db.collection('focusos_users').doc(userId).set(
-      {
-        ...data,
-        lastSyncedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+
+    // Clean payload for Firestore (remove undefined / functions)
+    const cleanHistory = JSON.parse(JSON.stringify(data.history || {}));
+    const cleanPresets = JSON.parse(JSON.stringify(data.presets || []));
+    const cleanAlarms = JSON.parse(JSON.stringify(data.alarms || {}));
+    const cleanNotif = JSON.parse(JSON.stringify(data.notificationConfig || {}));
+
+    const payload = {
+      focusos_history: cleanHistory,
+      focusos_presets: cleanPresets,
+      focusos_alarms: cleanAlarms,
+      focusos_notif_config: cleanNotif,
+      focusos_theme: data.themeMode || 'system',
+      focusos_chart_mode: data.chartViewMode || 'line',
+      // Dual-compatibility mirror
+      history: cleanHistory,
+      presets: cleanPresets,
+      alarms: cleanAlarms,
+      lastSyncedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await db.collection('users').doc(userId).set(payload, { merge: true });
+    return { success: true, timestamp: payload.lastSyncedAt };
   } catch (err) {
     console.error('Error syncing FocusOS data to Firestore:', err);
+    throw err;
   }
 }
 
@@ -154,9 +227,19 @@ export async function loadUserDataFromCloud(userId) {
   try {
     const { db } = await getFirebaseInstances();
     if (!db) return null;
-    const doc = await db.collection('focusos_users').doc(userId).get();
-    if (doc.exists) {
-      return doc.data();
+    const docSnap = await db.collection('users').doc(userId).get();
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      return {
+        history: data.focusos_history || data.history || {},
+        presets: data.focusos_presets || data.presets || [],
+        alarms: data.focusos_alarms || data.alarms || null,
+        notificationConfig: data.focusos_notif_config || data.focusos_notif || data.notificationConfig || null,
+        themeMode: data.focusos_theme || data.theme || null,
+        chartViewMode: data.focusos_chart_mode || null,
+        lastSyncedAt: data.lastSyncedAt || data.updatedAt || null,
+        rawPlan: data.plan || null,
+      };
     }
   } catch (err) {
     console.error('Error loading FocusOS data from Firestore:', err);
