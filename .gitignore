@@ -2,3 +2,7 @@ node_modules/
 dist/
 .DS_Store
 *.log
+.firebase/
+scratch/
+scratch_hist.db
+sandboxData.json

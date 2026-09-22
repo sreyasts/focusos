@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "mission-plustwo"
+  },
+  "targets": {
+    "mission-plustwo": {
+      "hosting": {
+        "focusos": [
+          "mergonic-focusos"
+        ]
+      }
+    }
+  }
+}

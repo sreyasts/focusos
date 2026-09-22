@@ -107,19 +107,6 @@ export async function signInWithGoogle() {
   const provider = new window.firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const isStandalone = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
-
-  // On mobile PWAs, popups get blocked or lose session context: use redirect
-  if (isMobile || isStandalone) {
-    try {
-      await auth.signInWithRedirect(provider);
-      return null;
-    } catch (redirectErr) {
-      console.warn('Redirect sign-in error, falling back to popup:', redirectErr);
-    }
-  }
-
   try {
     const result = await auth.signInWithPopup(provider);
     return result.user;
@@ -127,9 +114,10 @@ export async function signInWithGoogle() {
     if (
       err.code === 'auth/popup-blocked' ||
       err.code === 'auth/popup-closed-by-user' ||
-      err.code === 'auth/cancelled-popup-request'
+      err.code === 'auth/cancelled-popup-request' ||
+      err.code === 'auth/operation-not-supported-in-this-environment'
     ) {
-      console.log('Popup blocked or closed, falling back to redirect...');
+      console.log('Popup not available or blocked, falling back to redirect...');
       await auth.signInWithRedirect(provider);
       return null;
     }

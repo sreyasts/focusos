@@ -575,19 +575,6 @@ async function signInWithGoogle() {
   const provider = new window.firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
-  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const isStandalone = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
-
-  // On mobile PWAs, popups get blocked or lose session context: use redirect
-  if (isMobile || isStandalone) {
-    try {
-      await auth.signInWithRedirect(provider);
-      return null;
-    } catch (redirectErr) {
-      console.warn('Redirect sign-in error, falling back to popup:', redirectErr);
-    }
-  }
-
   try {
     const result = await auth.signInWithPopup(provider);
     return result.user;
@@ -595,9 +582,10 @@ async function signInWithGoogle() {
     if (
       err.code === 'auth/popup-blocked' ||
       err.code === 'auth/popup-closed-by-user' ||
-      err.code === 'auth/cancelled-popup-request'
+      err.code === 'auth/cancelled-popup-request' ||
+      err.code === 'auth/operation-not-supported-in-this-environment'
     ) {
-      console.log('Popup blocked or closed, falling back to redirect...');
+      console.log('Popup not available or blocked, falling back to redirect...');
       await auth.signInWithRedirect(provider);
       return null;
     }
@@ -1482,13 +1470,32 @@ class ErrorBoundary extends React.Component {
               color: "#9ca3af",
               textAlign: "center",
               fontSize: "0.875rem",
-              marginBottom: "2rem",
-              maxWidth: "20rem",
+              marginBottom: "1rem",
+              maxWidth: "22rem",
             }}
           >
-            An unexpected data conflict occurred. Your timeline may contain
-            corrupted elements from a previous version.
+            An unexpected error occurred during execution.
           </p>
+          {this.state.error && (
+            <div
+              style={{
+                backgroundColor: "#161616",
+                border: "1px solid #333",
+                borderRadius: "0.75rem",
+                padding: "0.75rem",
+                fontSize: "0.75rem",
+                fontFamily: "monospace",
+                color: "#ff6b6b",
+                maxWidth: "22rem",
+                maxHeight: "6rem",
+                overflowY: "auto",
+                marginBottom: "1.5rem",
+                wordBreak: "break-word",
+              }}
+            >
+              {this.state.error.message || String(this.state.error)}
+            </div>
+          )}
           <button
             onClick={() => window.location.reload()}
             style={{
@@ -1501,23 +1508,61 @@ class ErrorBoundary extends React.Component {
               width: "100%",
               maxWidth: "20rem",
               cursor: "pointer",
-              marginBottom: "1rem",
+              marginBottom: "0.75rem",
             }}
           >
             Reload App
           </button>
           <button
             onClick={() => {
-              const req = indexedDB.deleteDatabase("FocusOS_PWA_DB");
-              req.onsuccess = () => window.location.reload();
-              req.onerror = () => {
-                alert("Failed to wipe data. Try manually clearing browser cache.");
-                window.location.reload();
-              };
-              req.onblocked = () => {
-                alert("Please close all other tabs running this app to wipe data.");
-                window.location.reload();
-              };
+              try {
+                const dump = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                  const k = localStorage.key(i);
+                  dump[k] = localStorage.getItem(k);
+                }
+                const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `focusos-emergency-backup-${Date.now()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              } catch(e) {
+                alert("Failed to dump data: " + e.message);
+              }
+            }}
+            style={{
+              backgroundColor: "rgba(59, 130, 246, 0.15)",
+              color: "#60a5fa",
+              fontWeight: "bold",
+              padding: "0.75rem 2rem",
+              borderRadius: "9999px",
+              border: "1px solid rgba(59, 130, 246, 0.3)",
+              width: "100%",
+              maxWidth: "20rem",
+              cursor: "pointer",
+              marginBottom: "0.75rem",
+            }}
+          >
+            Emergency Export Local Data
+          </button>
+          <button
+            onClick={() => {
+              if (window.confirm("Wipe local database? Only do this after exporting backup.")) {
+                const req = indexedDB.deleteDatabase("FocusOS_PWA_DB");
+                req.onsuccess = () => window.location.reload();
+                req.onerror = () => {
+                  alert("Failed to wipe data. Try manually clearing browser cache.");
+                  window.location.reload();
+                };
+                req.onblocked = () => {
+                  alert("Please close all other tabs running this app to wipe data.");
+                  window.location.reload();
+                };
+              }
             }}
             style={{
               backgroundColor: "transparent",
@@ -1531,7 +1576,7 @@ class ErrorBoundary extends React.Component {
               cursor: "pointer",
             }}
           >
-            Wipe Data & Fix
+            Wipe Data & Reset
           </button>
         </div>
       );
@@ -2140,6 +2185,15 @@ function FocusOS() {
   const [currentUser, setCurrentUser] = useState(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState("idle");
   const [showFirebaseModal, setShowFirebaseModal] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState(null);
+
+  // Storage Inspector State
+  const [showStorageInspector, setShowStorageInspector] = useState(false);
+  const [storageReport, setStorageReport] = useState(null);
+
+  // Boot safety refs (prevent empty-state overwrite of existing data)
+  const hasCompletedInitialLoadRef = useRef(false);
+  const hadPriorDataRef = useRef(false);
 
   // Modals & UI Controls
   const [partialModal, setPartialModal] = useState(null);
@@ -2281,6 +2335,7 @@ function FocusOS() {
         }
 
         dbLoaded = true;
+        hasCompletedInitialLoadRef.current = true;
         checkReady();
       } catch (err) {
         console.error("Boot Error:", err);
@@ -2345,7 +2400,7 @@ function FocusOS() {
             setPresets(cloudData.presets);
           }
           if (cloudData.history && typeof cloudData.history === "object") {
-            setHistory((prev) => ({ ...cloudData.history, ...prev }));
+            setHistory((prev) => reconcileCloudAndLocal(prev, cloudData.history));
           }
           if (cloudData.alarms) {
             setAlarms((prev) => ({ ...prev, ...cloudData.alarms }));
@@ -2959,6 +3014,26 @@ function FocusOS() {
       alert("Storage scan error: " + err.message);
     } finally {
       setIsScanningStorage(false);
+    }
+  };
+
+  const handleCopyStorageReport = async () => {
+    try {
+      const report = await getRawStorageDiagnosticReport();
+      setStorageReport(report);
+      const txt = JSON.stringify(report, null, 2);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(txt);
+      }
+      handleAddToast({
+        id: `toast_report_${Date.now()}`,
+        title: 'Diagnostic Copied',
+        body: 'Storage diagnostic JSON copied to clipboard!',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+    } catch (err) {
+      console.error('Failed to copy storage report:', err);
+      alert('Could not copy diagnostic: ' + err.message);
     }
   };
 
@@ -4943,6 +5018,19 @@ function FocusOS() {
               <span className="leading-snug">{scanReport}</span>
             </div>
           )}
+
+          {/* Storage Inspector */}
+          <button
+            onClick={async () => {
+              const report = await getRawStorageDiagnosticReport();
+              setStorageReport(report);
+              setShowStorageInspector(true);
+            }}
+            className="w-full mt-1 py-2.5 px-4 rounded-2xl border border-dashed border-gray-300 dark:border-[#333] text-gray-500 dark:text-gray-400 font-bold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-all"
+          >
+            <Icon name="troubleshoot" size={16} />
+            Storage Inspector &amp; Force Restore
+          </button>
         </div>
 
         {/* Backup & Transfer Tools */}
@@ -5104,6 +5192,7 @@ function FocusOS() {
           {renderAlarmModal()}
           {renderFirebaseModal()}
           {renderBackupModal()}
+          {renderStorageInspectorModal()}
           {editingPreset && renderPresetEditor()}
           {partialModal && renderPartialModal()}
           {showCalendar && renderCalendar()}
