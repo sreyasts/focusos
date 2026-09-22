@@ -25,21 +25,8 @@ jobs:
       - name: Build Production Assets
         run: npm run build
 
-      - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ''
-          channelId: live
-          projectId: mission-plustwo
-          target: focusos
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-        continue-on-error: true
-
-      - name: Fallback Direct Firebase CLI Deploy
-        if: always()
+      - name: Deploy to Firebase Hosting (focusos-web & focusos-pwa)
         run: |
-          npx -y firebase-tools@latest deploy --only hosting:focusos --project mission-plustwo --token "${{ secrets.FIREBASE_TOKEN }}"
+          npx -y firebase-tools@latest deploy --only hosting --project mission-plustwo --token "${{ secrets.FIREBASE_TOKEN }}"
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

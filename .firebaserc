@@ -5,8 +5,11 @@
   "targets": {
     "mission-plustwo": {
       "hosting": {
-        "focusos": [
-          "mergonic-focusos"
+        "focusos-web": [
+          "focusos-web"
+        ],
+        "focusos-pwa": [
+          "focusos-pwa"
         ]
       }
     }
