@@ -1,20 +1,27 @@
 /**
  * FocusOS Universal Storage & Data Recovery Engine
- * Scans all available client storage (localStorage, all IndexedDB databases and object stores)
- * to locate and recover any lost analysis, history, presets, or timeline progress from current
- * and prior versions.
+ * Exhaustively scans all available client storage:
+ * - window.localStorage (FocusOS history, PlusTwo mission state, backups, raw date keys)
+ * - All IndexedDB databases & stores (FocusOS_PWA_DB, FocusOS_DB, Firestore cache, keyval, localforage)
+ * - Deep multi-schema parser: FocusOS history format, Kerala Plus Two study planner plans,
+ *   Firestore offline caches, raw arrays of logs, double-stringified JSON, and date-keyed entries.
+ * - Non-destructive merge preserving every logged checkmark, actual minutes, and score.
  */
+
+export function isDateString(str) {
+  return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str);
+}
 
 // Helper to check if an object looks like a date-keyed FocusOS history collection
 export function isHistoryRecord(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
   const keys = Object.keys(obj);
   if (keys.length === 0) return false;
-  // Check if keys match YYYY-MM-DD
-  const dateKeyMatches = keys.filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k));
+  // Check if any keys match YYYY-MM-DD
+  const dateKeyMatches = keys.filter(k => isDateString(k));
   if (dateKeyMatches.length > 0) return true;
   // Or check if obj has { date: "...", blocks: ... } (single day record)
-  if (obj.date && /^\d{4}-\d{2}-\d{2}$/.test(obj.date) && (obj.blocks || obj.blocksList || typeof obj.dailyScore === 'number')) {
+  if (obj.date && isDateString(obj.date) && (obj.blocks || obj.blocksList || typeof obj.dailyScore === 'number')) {
     return true;
   }
   return false;
@@ -27,15 +34,255 @@ export function isPresetArray(arr) {
 }
 
 /**
+ * Parses and converts Kerala Plus Two Study Planner format (plusTwoMissionState_v2 / plusTwoPlanState)
+ * into native FocusOS daily history records and recurring presets.
+ */
+export function extractFromPlusTwoPlan(planData) {
+  const recoveredDays = {};
+  const recoveredPresets = [];
+
+  if (!planData) return { recoveredDays, recoveredPresets };
+
+  // Locate the plan array
+  let plan = null;
+  if (Array.isArray(planData)) {
+    plan = planData;
+  } else if (planData && Array.isArray(planData.plan)) {
+    plan = planData.plan;
+  }
+
+  if (!plan || plan.length === 0) return { recoveredDays, recoveredPresets };
+
+  const uniqueTaskNames = new Map();
+
+  plan.forEach((day, dayIdx) => {
+    if (!day) return;
+    let ds = null;
+    if (isDateString(day.date)) {
+      ds = day.date;
+    } else if (day.dayNumber) {
+      // If date is missing, calculate reasonable date offset
+      const d = new Date();
+      d.setDate(d.getDate() - (plan.length - day.dayNumber));
+      ds = d.toISOString().slice(0, 10);
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() - (plan.length - dayIdx));
+      ds = d.toISOString().slice(0, 10);
+    }
+
+    const tasks = Array.isArray(day.tasks) ? day.tasks : [];
+    const blocks = {};
+    const blocksList = [];
+    let completedWeight = 0;
+    let totalWeight = 0;
+    const baseHour = 6; // Morning start
+
+    tasks.forEach((t, tIdx) => {
+      if (!t) return;
+      const bId = String(t.id || `mpt_${dayIdx}_${tIdx}`);
+      const duration = t.estimatedMinutes || 60;
+      const startMin = (baseHour * 60) + (tIdx * 90);
+      const sh = String(Math.floor(startMin / 60) % 24).padStart(2, '0');
+      const sm = String(startMin % 60).padStart(2, '0');
+      const endMin = startMin + duration;
+      const eh = String(Math.floor(endMin / 60) % 24).padStart(2, '0');
+      const em = String(endMin % 60).padStart(2, '0');
+
+      const taskName = (t.subject ? `${t.subject}: ` : '') + (t.topicTitle || t.chapterName || t.name || 'Study Block');
+      const weight = t.weight || (t.grade === '+2' ? 3 : 2);
+      totalWeight += weight;
+
+      if (t.completed) {
+        completedWeight += weight;
+        blocks[bId] = {
+          status: 'completed',
+          actualMins: duration,
+          completedAt: `${eh}:${em}`,
+          logMethod: 'plus_two_migrated',
+        };
+      } else {
+        blocks[bId] = {
+          status: 'pending',
+        };
+      }
+
+      const blockDef = {
+        id: bId,
+        name: taskName,
+        start: `${sh}:${sm}`,
+        end: `${eh}:${em}`,
+        weight,
+        tag: t.subject || 'Study',
+      };
+      blocksList.push(blockDef);
+
+      if (!uniqueTaskNames.has(taskName)) {
+        uniqueTaskNames.set(taskName, {
+          id: `preset_${bId}`,
+          name: taskName,
+          start: `${sh}:${sm}`,
+          end: `${eh}:${em}`,
+          days: [0, 1, 2, 3, 4, 5, 6],
+          weight,
+          tag: t.subject || 'Study',
+        });
+      }
+    });
+
+    const dailyScore = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
+    recoveredDays[ds] = {
+      date: ds,
+      dailyScore,
+      blocks,
+      blocksList,
+    };
+  });
+
+  return {
+    recoveredDays,
+    recoveredPresets: Array.from(uniqueTaskNames.values()).slice(0, 15),
+  };
+}
+
+/**
+ * Universal Recursive Extractor
+ * Accepts any arbitrary object, array, or stringified payload and searches for
+ * FocusOS history, PlusTwo plans, single day logs, or date-keyed structures.
+ */
+export function extractHistoryAndPresetsFromAny(value, keyHint = '', depth = 0) {
+  const recoveredDays = {};
+  let recoveredPresets = null;
+
+  if (value === null || value === undefined || depth > 5) {
+    return { recoveredDays, recoveredPresets };
+  }
+
+  // 1. If value is a string, try JSON.parse (handles double-stringified JSON)
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return extractHistoryAndPresetsFromAny(parsed, keyHint, depth + 1);
+      } catch {}
+    }
+    return { recoveredDays, recoveredPresets };
+  }
+
+  // 2. Check for Kerala PlusTwo study planner structure
+  if (value && typeof value === 'object') {
+    if (Array.isArray(value.plan) || (Array.isArray(value) && value.some(item => item && item.tasks && Array.isArray(item.tasks)))) {
+      const ptRes = extractFromPlusTwoPlan(value);
+      Object.assign(recoveredDays, ptRes.recoveredDays);
+      if (ptRes.recoveredPresets && ptRes.recoveredPresets.length > 0) {
+        recoveredPresets = ptRes.recoveredPresets;
+      }
+    }
+  }
+
+  // 3. Check if keyHint itself is a date (e.g. key is "2026-09-18")
+  if (isDateString(keyHint) && value && typeof value === 'object') {
+    const ds = keyHint;
+    const blocks = value.blocks || (value.tasks && typeof value.tasks === 'object' ? value.tasks : {});
+    const blocksList = Array.isArray(value.blocksList) ? value.blocksList : (Array.isArray(value.tasks) ? value.tasks : []);
+    const dailyScore = typeof value.dailyScore === 'number' ? value.dailyScore : (typeof value.score === 'number' ? value.score : 0);
+    recoveredDays[ds] = {
+      date: ds,
+      dailyScore,
+      blocks,
+      blocksList,
+      ...value,
+    };
+  }
+
+  // 4. Check if object has { date: "YYYY-MM-DD", blocks: ... }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (isDateString(value.date) && (value.blocks || value.blocksList || typeof value.dailyScore === 'number')) {
+      recoveredDays[value.date] = value;
+    }
+  }
+
+  // 5. Check if value is a standard FocusOS date-keyed history dictionary
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    let hasDateKeys = false;
+    Object.entries(value).forEach(([k, dayVal]) => {
+      if (isDateString(k) && dayVal && typeof dayVal === 'object') {
+        recoveredDays[k] = {
+          date: k,
+          dailyScore: typeof dayVal.dailyScore === 'number' ? dayVal.dailyScore : 0,
+          blocks: dayVal.blocks || {},
+          blocksList: dayVal.blocksList || [],
+          ...dayVal,
+        };
+        hasDateKeys = true;
+      }
+    });
+
+    // 6. Check preset arrays
+    if (isPresetArray(value)) {
+      recoveredPresets = value;
+    }
+    if (Array.isArray(value.presets) && isPresetArray(value.presets)) {
+      recoveredPresets = value.presets;
+    }
+
+    // 7. If not already handled, search nested properties (e.g. history, data, state, timeline)
+    if (!hasDateKeys) {
+      const candidateKeys = ['history', 'days', 'logs', 'records', 'timeline', 'data', 'state', 'appState', 'v2', 'v1', 'savedState'];
+      for (const prop of candidateKeys) {
+        if (value[prop] && typeof value[prop] === 'object') {
+          const nested = extractHistoryAndPresetsFromAny(value[prop], prop, depth + 1);
+          Object.assign(recoveredDays, nested.recoveredDays);
+          if (nested.recoveredPresets && (!recoveredPresets || nested.recoveredPresets.length > recoveredPresets.length)) {
+            recoveredPresets = nested.recoveredPresets;
+          }
+        }
+      }
+    }
+  }
+
+  // 8. If value is an Array of days / logs
+  if (Array.isArray(value)) {
+    if (isPresetArray(value)) {
+      recoveredPresets = value;
+    } else {
+      value.forEach((item, idx) => {
+        if (item && typeof item === 'object') {
+          if (isDateString(item.date)) {
+            recoveredDays[item.date] = {
+              date: item.date,
+              dailyScore: typeof item.dailyScore === 'number' ? item.dailyScore : 0,
+              blocks: item.blocks || {},
+              blocksList: item.blocksList || [],
+              ...item,
+            };
+          } else {
+            const nested = extractHistoryAndPresetsFromAny(item, `item_${idx}`, depth + 1);
+            Object.assign(recoveredDays, nested.recoveredDays);
+            if (nested.recoveredPresets && (!recoveredPresets || nested.recoveredPresets.length > recoveredPresets.length)) {
+              recoveredPresets = nested.recoveredPresets;
+            }
+          }
+        }
+      });
+    }
+  }
+
+  return { recoveredDays, recoveredPresets };
+}
+
+/**
  * Exhaustively scans window.localStorage across all keys
  */
 export function scanLocalStorage() {
   const recoveredDays = {};
   let recoveredPresets = null;
+  const keyDetails = [];
   let keysScanned = 0;
 
   if (typeof window === 'undefined' || !window.localStorage) {
-    return { recoveredDays, recoveredPresets, keysScanned };
+    return { recoveredDays, recoveredPresets, keysScanned, keyDetails };
   }
 
   try {
@@ -46,51 +293,32 @@ export function scanLocalStorage() {
 
       try {
         const raw = window.localStorage.getItem(key);
-        if (!raw || raw.length < 2) continue;
-        const data = JSON.parse(raw);
+        if (!raw) continue;
 
-        // Check if data is history dictionary
-        if (isHistoryRecord(data)) {
-          if (data.date && (data.blocks || data.blocksList)) {
-            recoveredDays[data.date] = data;
-          } else {
-            Object.entries(data).forEach(([ds, dayVal]) => {
-              if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && dayVal && typeof dayVal === 'object') {
-                recoveredDays[ds] = dayVal;
-              }
-            });
-          }
-        }
+        const sizeKb = (raw.length / 1024).toFixed(1);
+        keyDetails.push({
+          key,
+          length: raw.length,
+          sizeKb: `${sizeKb} KB`,
+          preview: raw.slice(0, 100) + (raw.length > 100 ? '...' : ''),
+        });
 
-        // Check if data has nested history (e.g. data.history)
-        if (data && typeof data === 'object' && data.history && isHistoryRecord(data.history)) {
-          Object.entries(data.history).forEach(([ds, dayVal]) => {
-            if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && dayVal && typeof dayVal === 'object') {
-              recoveredDays[ds] = dayVal;
-            }
-          });
-        }
+        // Run universal extractor on raw string / parsed JSON
+        const extracted = extractHistoryAndPresetsFromAny(raw, key);
+        Object.assign(recoveredDays, extracted.recoveredDays);
 
-        // Check if presets
-        if (isPresetArray(data)) {
-          if (!recoveredPresets || data.length > recoveredPresets.length) {
-            recoveredPresets = data;
-          }
+        if (extracted.recoveredPresets && (!recoveredPresets || extracted.recoveredPresets.length > recoveredPresets.length)) {
+          recoveredPresets = extracted.recoveredPresets;
         }
-        if (data && Array.isArray(data.presets) && isPresetArray(data.presets)) {
-          if (!recoveredPresets || data.presets.length > recoveredPresets.length) {
-            recoveredPresets = data.presets;
-          }
-        }
-      } catch {
-        // Non-JSON key, skip
+      } catch (keyErr) {
+        console.warn(`LocalStorage scan error on key "${key}":`, keyErr);
       }
     }
   } catch (err) {
     console.warn('LocalStorage scan warning:', err);
   }
 
-  return { recoveredDays, recoveredPresets, keysScanned };
+  return { recoveredDays, recoveredPresets, keysScanned, keyDetails };
 }
 
 /**
@@ -99,14 +327,15 @@ export function scanLocalStorage() {
 export async function scanIndexedDB() {
   const recoveredDays = {};
   let recoveredPresets = null;
+  const dbDetails = [];
   let dbsScanned = 0;
   let storesScanned = 0;
 
   if (typeof window === 'undefined' || !window.indexedDB) {
-    return { recoveredDays, recoveredPresets, dbsScanned, storesScanned };
+    return { recoveredDays, recoveredPresets, dbsScanned, storesScanned, dbDetails };
   }
 
-  // Candidate DB names across past and present FocusOS builds
+  // Candidate DB names across past and present FocusOS and Study Planner builds
   const candidateDBs = [
     "FocusOS_PWA_DB",
     "FocusOS_DB",
@@ -116,6 +345,10 @@ export async function scanIndexedDB() {
     "app_data",
     "keyval-store",
     "localforage",
+    "mission-plustwo",
+    "plustwo",
+    "plustwo_db",
+    "firebaseLocalStorageDb",
   ];
 
   try {
@@ -134,18 +367,54 @@ export async function scanIndexedDB() {
   for (const dbName of candidateDBs) {
     try {
       const db = await new Promise((resolve) => {
+        let finished = false;
+        const timer = setTimeout(() => {
+          if (!finished) {
+            finished = true;
+            resolve(null);
+          }
+        }, 1500);
+
         try {
           const req = indexedDB.open(dbName);
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => resolve(null);
-          req.onblocked = () => resolve(null);
+          req.onsuccess = () => {
+            if (!finished) {
+              finished = true;
+              clearTimeout(timer);
+              resolve(req.result);
+            }
+          };
+          req.onerror = () => {
+            if (!finished) {
+              finished = true;
+              clearTimeout(timer);
+              resolve(null);
+            }
+          };
+          req.onblocked = () => {
+            if (!finished) {
+              finished = true;
+              clearTimeout(timer);
+              resolve(null);
+            }
+          };
         } catch {
-          resolve(null);
+          if (!finished) {
+            finished = true;
+            clearTimeout(timer);
+            resolve(null);
+          }
         }
       });
 
       if (!db) continue;
       dbsScanned++;
+
+      const currentDbInfo = {
+        dbName,
+        version: db.version,
+        stores: [],
+      };
 
       const storeNames = Array.from(db.objectStoreNames || []);
       for (const storeName of storeNames) {
@@ -155,60 +424,69 @@ export async function scanIndexedDB() {
             try {
               const tx = db.transaction(storeName, 'readonly');
               const store = tx.objectStore(storeName);
-              const items = [];
-              const cursorReq = store.openCursor();
-              cursorReq.onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor) {
-                  items.push({ key: cursor.key, val: cursor.value });
-                  cursor.continue();
-                } else {
-                  resolve(items);
-                }
-              };
-              cursorReq.onerror = () => resolve([]);
+
+              // Use store.getAll() and store.getAllKeys() if supported, with cursor fallback
+              if (typeof store.getAll === 'function' && typeof store.getAllKeys === 'function') {
+                const keysReq = store.getAllKeys();
+                keysReq.onsuccess = () => {
+                  const keys = keysReq.result || [];
+                  const valsReq = store.getAll();
+                  valsReq.onsuccess = () => {
+                    const vals = valsReq.result || [];
+                    const items = keys.map((k, idx) => ({ key: k, val: vals[idx] }));
+                    resolve(items);
+                  };
+                  valsReq.onerror = () => resolve([]);
+                };
+                keysReq.onerror = () => resolve([]);
+              } else {
+                const items = [];
+                const cursorReq = store.openCursor();
+                cursorReq.onsuccess = (e) => {
+                  const cursor = e.target.result;
+                  if (cursor) {
+                    items.push({ key: cursor.key, val: cursor.value });
+                    cursor.continue();
+                  } else {
+                    resolve(items);
+                  }
+                };
+                cursorReq.onerror = () => resolve([]);
+              }
             } catch {
               resolve([]);
             }
           });
 
+          currentDbInfo.stores.push({
+            storeName,
+            recordCount: records.length,
+            sampleKeys: records.slice(0, 5).map(r => String(r.key)),
+          });
+
           for (const item of records) {
-            const val = item.val;
-            if (isHistoryRecord(val)) {
-              if (val.date && (val.blocks || val.blocksList)) {
-                recoveredDays[val.date] = val;
-              } else {
-                Object.entries(val).forEach(([ds, dayVal]) => {
-                  if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && dayVal && typeof dayVal === 'object') {
-                    recoveredDays[ds] = dayVal;
-                  }
-                });
-              }
-            }
-            if (val && typeof val === 'object' && val.history && isHistoryRecord(val.history)) {
-              Object.entries(val.history).forEach(([ds, dayVal]) => {
-                if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && dayVal && typeof dayVal === 'object') {
-                  recoveredDays[ds] = dayVal;
-                }
-              });
-            }
-            if (isPresetArray(val)) {
-              if (!recoveredPresets || val.length > recoveredPresets.length) {
-                recoveredPresets = val;
-              }
+            const extracted = extractHistoryAndPresetsFromAny(item.val, String(item.key));
+            Object.assign(recoveredDays, extracted.recoveredDays);
+
+            if (extracted.recoveredPresets && (!recoveredPresets || extracted.recoveredPresets.length > recoveredPresets.length)) {
+              recoveredPresets = extracted.recoveredPresets;
             }
           }
         } catch (storeErr) {
           console.warn(`Scan error in store ${storeName}:`, storeErr);
         }
       }
-      db.close();
+
+      dbDetails.push(currentDbInfo);
+      try {
+        db.close();
+      } catch {}
     } catch {
       // Continue to next DB
     }
   }
 
-  return { recoveredDays, recoveredPresets, dbsScanned, storesScanned };
+  return { recoveredDays, recoveredPresets, dbsScanned, storesScanned, dbDetails };
 }
 
 /**
@@ -275,14 +553,16 @@ export async function performDeepScanAndRecover({ currentHistory = {}, currentPr
   const finalCount = Object.keys(mergedHistory).length;
   const newlyRecoveredDays = Math.max(0, finalCount - initialCount);
 
-  // Dual-redundant backup write
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem('fo6_history', JSON.stringify(mergedHistory));
-      window.localStorage.setItem('focusos_history_master_backup', JSON.stringify(mergedHistory));
-      window.localStorage.setItem('fo6_presets', JSON.stringify(mergedPresets));
-    }
-  } catch (e) {}
+  // Dual-redundant backup write if days were recovered
+  if (finalCount > 0) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('fo6_history', JSON.stringify(mergedHistory));
+        window.localStorage.setItem('focusos_history_master_backup', JSON.stringify(mergedHistory));
+        window.localStorage.setItem('fo6_presets', JSON.stringify(mergedPresets));
+      }
+    } catch (e) {}
+  }
 
   return {
     mergedHistory,
@@ -294,6 +574,35 @@ export async function performDeepScanAndRecover({ currentHistory = {}, currentPr
       totalDays: finalCount,
       newlyRecoveredDays,
     },
+    diagnostics: {
+      localStorageKeys: lsResult.keyDetails,
+      indexedDBs: idbResult.dbDetails,
+    },
+  };
+}
+
+/**
+ * Generate a complete raw storage diagnostic report
+ * Used by the Storage Inspector in Settings
+ */
+export async function getRawStorageDiagnosticReport() {
+  const lsResult = scanLocalStorage();
+  const idbResult = await scanIndexedDB();
+
+  return {
+    timestamp: new Date().toISOString(),
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown',
+    localStorage: {
+      totalKeys: lsResult.keysScanned,
+      keys: lsResult.keyDetails,
+      detectedDaysCount: Object.keys(lsResult.recoveredDays).length,
+    },
+    indexedDB: {
+      totalDatabases: idbResult.dbsScanned,
+      databases: idbResult.dbDetails,
+      detectedDaysCount: Object.keys(idbResult.recoveredDays).length,
+    },
+    totalRecoverableDays: Object.keys({ ...lsResult.recoveredDays, ...idbResult.recoveredDays }).length,
   };
 }
 
@@ -327,28 +636,29 @@ export function exportBackupData({ history, presets, alarms, notificationConfig 
  */
 export function parseImportBackup(jsonString) {
   try {
-    const data = JSON.parse(jsonString);
-    if (!data || typeof data !== 'object') throw new Error("Invalid JSON structure");
+    const extracted = extractHistoryAndPresetsFromAny(jsonString, 'imported_backup');
+    const dayCount = Object.keys(extracted.recoveredDays).length;
 
-    let history = {};
-    let presets = null;
+    let alarms = null;
+    let notificationConfig = null;
+    try {
+      const parsed = JSON.parse(jsonString);
+      if (parsed && typeof parsed === 'object') {
+        alarms = parsed.alarms || null;
+        notificationConfig = parsed.notificationConfig || null;
+      }
+    } catch {}
 
-    if (data.history && isHistoryRecord(data.history)) {
-      history = data.history;
-    } else if (isHistoryRecord(data)) {
-      history = data;
-    }
-
-    if (data.presets && isPresetArray(data.presets)) {
-      presets = data.presets;
+    if (dayCount === 0 && (!extracted.recoveredPresets || extracted.recoveredPresets.length === 0)) {
+      throw new Error("No activity days or schedules found in the imported file");
     }
 
     return {
       success: true,
-      history,
-      presets,
-      alarms: data.alarms || null,
-      notificationConfig: data.notificationConfig || null,
+      history: extracted.recoveredDays,
+      presets: extracted.recoveredPresets,
+      alarms,
+      notificationConfig,
     };
   } catch (err) {
     return {

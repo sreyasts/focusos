@@ -15,21 +15,54 @@ import React, {
 
 // ─── EMBEDDED ALARM ENGINE ───────────────────────────────────────────────────
 /**
- * FocusOS Alarm Engine
+ * FocusOS System Alarm Engine
  * Features:
- * - Web Audio API synthesized alarm sounds (zero external assets needed)
- * - Auto-sync calculation of wake-up time (earliest block start) and sleep time (latest block end/sleep block)
- * - Alarm loop management with Snooze and Dismiss capabilities
+ * - Authentic System Alarm Sound (Piercing Piezoelectric Digital Clock 4-Burst Beep)
+ * - Emergency Urgency Siren, Android Ringer, and Classic Marimba options
+ * - Screen Wake Lock support during ringing
+ * - Full vibration cadence synchronized with alarm sound bursts
+ * - Auto-sync calculation of wake-up time (earliest block start) and sleep time (latest block end)
+ * - Loop management with Snooze (+5m) and Dismiss
  */
 
 let activeAudioCtx = null;
 let activeAlarmInterval = null;
+let activeWakeLock = null;
+
+// Available Alarm Tones
+const ALARM_SOUND_TYPES = [
+  { id: 'system_digital', name: 'System Digital Clock ⏰ (Default)' },
+  { id: 'android_siren', name: 'Emergency Urgency Siren 🚨' },
+  { id: 'clock_chime', name: 'Android Dual-Tone Ringer 🔔' },
+  { id: 'gentle_marimba', name: 'Gentle Morning Marimba 🎵' },
+];
 
 /**
- * Play a synthesized multi-harmonic alarm tone loop using Web Audio API
+ * Acquire screen wake lock while alarm is ringing so the smartphone screen stays on
  */
-function playAlarmSound(volume = 0.8) {
+async function acquireWakeLock() {
+  try {
+    if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
+      activeWakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch {}
+}
+
+function releaseWakeLock() {
+  try {
+    if (activeWakeLock) {
+      activeWakeLock.release();
+      activeWakeLock = null;
+    }
+  } catch {}
+}
+
+/**
+ * Play authentic System Digital Alarm sound or chosen sound type
+ */
+function playAlarmSound(volume = 0.85, soundType = 'system_digital') {
   stopAlarmSound();
+  acquireWakeLock();
 
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -38,45 +71,134 @@ function playAlarmSound(volume = 0.8) {
     const ctx = new AudioContext();
     activeAudioCtx = ctx;
 
-    const playChord = () => {
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+
+    const playCycle = () => {
       if (!ctx || ctx.state === 'closed') return;
       if (ctx.state === 'suspended') {
         ctx.resume();
       }
 
       const now = ctx.currentTime;
-      // Gentle ascending triad: E5 (659.25Hz), G#5 (830.61Hz), B5 (987.77Hz), E6 (1318.51Hz)
-      const freqs = [659.25, 830.61, 987.77, 1318.51];
 
-      freqs.forEach((freq, idx) => {
+      if (soundType === 'android_siren') {
+        // High-Urgency Alternating Siren: 880Hz <-> 1320Hz
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.linearRampToValueAtTime(1320, now + 0.35);
+        osc.frequency.linearRampToValueAtTime(880, now + 0.7);
 
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + idx * 0.12);
-
-        // Envelope
-        const start = now + idx * 0.12;
-        gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(volume * 0.25, start + 0.04);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.6);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(volume * 0.7, now + 0.05);
+        gain.gain.setValueAtTime(volume * 0.7, now + 0.65);
+        gain.gain.linearRampToValueAtTime(0.001, now + 0.75);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.78);
 
-        osc.start(start);
-        osc.stop(start + 0.65);
-      });
+        if (navigator.vibrate) {
+          navigator.vibrate([350, 100, 350, 100]);
+        }
+      } else if (soundType === 'clock_chime') {
+        // Dual-tone bright ascending ringer: 784Hz (G5) -> 1046Hz (C6) -> 1318Hz (E6)
+        [783.99, 1046.5, 1318.51].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+
+          const t = now + idx * 0.12;
+          gain.gain.setValueAtTime(0.001, t);
+          gain.gain.exponentialRampToValueAtTime(volume * 0.5, t + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.28);
+        });
+
+        if (navigator.vibrate) {
+          navigator.vibrate([150, 80, 150, 80, 200, 300]);
+        }
+      } else if (soundType === 'gentle_marimba') {
+        // Soft ascending triad
+        [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+
+          const t = now + idx * 0.1;
+          gain.gain.setValueAtTime(0.001, t);
+          gain.gain.exponentialRampToValueAtTime(volume * 0.35, t + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.55);
+        });
+
+        if (navigator.vibrate) {
+          navigator.vibrate([300, 200, 300, 400]);
+        }
+      } else {
+        // DEFAULT: Authentic System Digital Alarm (4-burst Piezoelectric Buzzer Beeps)
+        // Exactly matches digital alarm clock / Android native alarm sound
+        const beepTimes = [0, 0.12, 0.24, 0.36];
+        const primaryFreq = 1046.5; // C6 piercing buzzer frequency
+        const harmonicFreq = 2093.0; // C7 overtone for crisp digital edge
+
+        beepTimes.forEach((delay) => {
+          const t = now + delay;
+
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          const filter = ctx.createBiquadFilter();
+
+          osc1.type = 'square';
+          osc1.frequency.setValueAtTime(primaryFreq, t);
+
+          osc2.type = 'square';
+          osc2.frequency.setValueAtTime(harmonicFreq, t);
+
+          filter.type = 'bandpass';
+          filter.frequency.setValueAtTime(1500, t);
+          filter.Q.setValueAtTime(1.2, t);
+
+          gainNode.gain.setValueAtTime(0.001, t);
+          gainNode.gain.linearRampToValueAtTime(volume * 0.85, t + 0.008);
+          gainNode.gain.setValueAtTime(volume * 0.85, t + 0.065);
+          gainNode.gain.linearRampToValueAtTime(0.001, t + 0.075);
+
+          osc1.connect(filter);
+          osc2.connect(filter);
+          filter.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          osc1.start(t);
+          osc2.start(t);
+          osc1.stop(t + 0.08);
+          osc2.stop(t + 0.08);
+        });
+
+        if (navigator.vibrate) {
+          navigator.vibrate([80, 40, 80, 40, 80, 40, 80, 450]);
+        }
+      }
     };
 
-    // Play immediately and repeat every 1.5 seconds
-    playChord();
-    activeAlarmInterval = setInterval(playChord, 1500);
-
-    // Vibration pattern if supported
-    if (navigator.vibrate) {
-      navigator.vibrate([400, 200, 400, 200, 800]);
-    }
+    const intervalMs = soundType === 'android_siren' ? 1200 : (soundType === 'clock_chime' ? 1400 : 900);
+    playCycle();
+    activeAlarmInterval = setInterval(playCycle, intervalMs);
 
     return stopAlarmSound;
   } catch (err) {
@@ -86,7 +208,7 @@ function playAlarmSound(volume = 0.8) {
 }
 
 /**
- * Stop any active ringing alarm
+ * Stop any active ringing alarm and release wake lock
  */
 function stopAlarmSound() {
   if (activeAlarmInterval) {
@@ -99,7 +221,8 @@ function stopAlarmSound() {
     } catch {}
     activeAudioCtx = null;
   }
-  if (navigator.vibrate) {
+  releaseWakeLock();
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
     navigator.vibrate(0);
   }
 }
@@ -147,8 +270,6 @@ function playNotificationChime() {
 function calculateAutoWakeTime(todaysBlocks) {
   if (!Array.isArray(todaysBlocks) || todaysBlocks.length === 0) return '06:00';
 
-  // Exclude overnight sleep blocks if they are active in the early morning
-  // Find non-sleep blocks, or the earliest daytime block
   const daytimeBlocks = todaysBlocks.filter(
     (b) => b && b.start && !b.name?.toLowerCase().includes('sleep')
   );
@@ -166,13 +287,11 @@ function calculateAutoWakeTime(todaysBlocks) {
 function calculateAutoSleepTime(todaysBlocks) {
   if (!Array.isArray(todaysBlocks) || todaysBlocks.length === 0) return '22:00';
 
-  // If there is an explicit Sleep block, its start time is bedtime
   const sleepBlock = todaysBlocks.find((b) => b && b.name?.toLowerCase().includes('sleep'));
   if (sleepBlock && sleepBlock.start) {
     return sleepBlock.start;
   }
 
-  // Otherwise, find the latest end time among today's blocks
   const sorted = [...todaysBlocks].sort((a, b) => (a.end || '').localeCompare(b.end || ''));
   return sorted[sorted.length - 1]?.end || '22:00';
 }
@@ -517,21 +636,28 @@ async function loadUserDataFromCloud(userId) {
 // ─── EMBEDDED UNIVERSAL STORAGE & DATA RECOVERY ENGINE ─────────────────────────
 /**
  * FocusOS Universal Storage & Data Recovery Engine
- * Scans all available client storage (localStorage, all IndexedDB databases and object stores)
- * to locate and recover any lost analysis, history, presets, or timeline progress from current
- * and prior versions.
+ * Exhaustively scans all available client storage:
+ * - window.localStorage (FocusOS history, PlusTwo mission state, backups, raw date keys)
+ * - All IndexedDB databases & stores (FocusOS_PWA_DB, FocusOS_DB, Firestore cache, keyval, localforage)
+ * - Deep multi-schema parser: FocusOS history format, Kerala Plus Two study planner plans,
+ *   Firestore offline caches, raw arrays of logs, double-stringified JSON, and date-keyed entries.
+ * - Non-destructive merge preserving every logged checkmark, actual minutes, and score.
  */
+
+function isDateString(str) {
+  return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str);
+}
 
 // Helper to check if an object looks like a date-keyed FocusOS history collection
 function isHistoryRecord(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
   const keys = Object.keys(obj);
   if (keys.length === 0) return false;
-  // Check if keys match YYYY-MM-DD
-  const dateKeyMatches = keys.filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k));
+  // Check if any keys match YYYY-MM-DD
+  const dateKeyMatches = keys.filter(k => isDateString(k));
   if (dateKeyMatches.length > 0) return true;
   // Or check if obj has { date: "...", blocks: ... } (single day record)
-  if (obj.date && /^\d{4}-\d{2}-\d{2}$/.test(obj.date) && (obj.blocks || obj.blocksList || typeof obj.dailyScore === 'number')) {
+  if (obj.date && isDateString(obj.date) && (obj.blocks || obj.blocksList || typeof obj.dailyScore === 'number')) {
     return true;
   }
   return false;
@@ -544,15 +670,255 @@ function isPresetArray(arr) {
 }
 
 /**
+ * Parses and converts Kerala Plus Two Study Planner format (plusTwoMissionState_v2 / plusTwoPlanState)
+ * into native FocusOS daily history records and recurring presets.
+ */
+function extractFromPlusTwoPlan(planData) {
+  const recoveredDays = {};
+  const recoveredPresets = [];
+
+  if (!planData) return { recoveredDays, recoveredPresets };
+
+  // Locate the plan array
+  let plan = null;
+  if (Array.isArray(planData)) {
+    plan = planData;
+  } else if (planData && Array.isArray(planData.plan)) {
+    plan = planData.plan;
+  }
+
+  if (!plan || plan.length === 0) return { recoveredDays, recoveredPresets };
+
+  const uniqueTaskNames = new Map();
+
+  plan.forEach((day, dayIdx) => {
+    if (!day) return;
+    let ds = null;
+    if (isDateString(day.date)) {
+      ds = day.date;
+    } else if (day.dayNumber) {
+      // If date is missing, calculate reasonable date offset
+      const d = new Date();
+      d.setDate(d.getDate() - (plan.length - day.dayNumber));
+      ds = d.toISOString().slice(0, 10);
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() - (plan.length - dayIdx));
+      ds = d.toISOString().slice(0, 10);
+    }
+
+    const tasks = Array.isArray(day.tasks) ? day.tasks : [];
+    const blocks = {};
+    const blocksList = [];
+    let completedWeight = 0;
+    let totalWeight = 0;
+    const baseHour = 6; // Morning start
+
+    tasks.forEach((t, tIdx) => {
+      if (!t) return;
+      const bId = String(t.id || `mpt_${dayIdx}_${tIdx}`);
+      const duration = t.estimatedMinutes || 60;
+      const startMin = (baseHour * 60) + (tIdx * 90);
+      const sh = String(Math.floor(startMin / 60) % 24).padStart(2, '0');
+      const sm = String(startMin % 60).padStart(2, '0');
+      const endMin = startMin + duration;
+      const eh = String(Math.floor(endMin / 60) % 24).padStart(2, '0');
+      const em = String(endMin % 60).padStart(2, '0');
+
+      const taskName = (t.subject ? `${t.subject}: ` : '') + (t.topicTitle || t.chapterName || t.name || 'Study Block');
+      const weight = t.weight || (t.grade === '+2' ? 3 : 2);
+      totalWeight += weight;
+
+      if (t.completed) {
+        completedWeight += weight;
+        blocks[bId] = {
+          status: 'completed',
+          actualMins: duration,
+          completedAt: `${eh}:${em}`,
+          logMethod: 'plus_two_migrated',
+        };
+      } else {
+        blocks[bId] = {
+          status: 'pending',
+        };
+      }
+
+      const blockDef = {
+        id: bId,
+        name: taskName,
+        start: `${sh}:${sm}`,
+        end: `${eh}:${em}`,
+        weight,
+        tag: t.subject || 'Study',
+      };
+      blocksList.push(blockDef);
+
+      if (!uniqueTaskNames.has(taskName)) {
+        uniqueTaskNames.set(taskName, {
+          id: `preset_${bId}`,
+          name: taskName,
+          start: `${sh}:${sm}`,
+          end: `${eh}:${em}`,
+          days: [0, 1, 2, 3, 4, 5, 6],
+          weight,
+          tag: t.subject || 'Study',
+        });
+      }
+    });
+
+    const dailyScore = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
+    recoveredDays[ds] = {
+      date: ds,
+      dailyScore,
+      blocks,
+      blocksList,
+    };
+  });
+
+  return {
+    recoveredDays,
+    recoveredPresets: Array.from(uniqueTaskNames.values()).slice(0, 15),
+  };
+}
+
+/**
+ * Universal Recursive Extractor
+ * Accepts any arbitrary object, array, or stringified payload and searches for
+ * FocusOS history, PlusTwo plans, single day logs, or date-keyed structures.
+ */
+function extractHistoryAndPresetsFromAny(value, keyHint = '', depth = 0) {
+  const recoveredDays = {};
+  let recoveredPresets = null;
+
+  if (value === null || value === undefined || depth > 5) {
+    return { recoveredDays, recoveredPresets };
+  }
+
+  // 1. If value is a string, try JSON.parse (handles double-stringified JSON)
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return extractHistoryAndPresetsFromAny(parsed, keyHint, depth + 1);
+      } catch {}
+    }
+    return { recoveredDays, recoveredPresets };
+  }
+
+  // 2. Check for Kerala PlusTwo study planner structure
+  if (value && typeof value === 'object') {
+    if (Array.isArray(value.plan) || (Array.isArray(value) && value.some(item => item && item.tasks && Array.isArray(item.tasks)))) {
+      const ptRes = extractFromPlusTwoPlan(value);
+      Object.assign(recoveredDays, ptRes.recoveredDays);
+      if (ptRes.recoveredPresets && ptRes.recoveredPresets.length > 0) {
+        recoveredPresets = ptRes.recoveredPresets;
+      }
+    }
+  }
+
+  // 3. Check if keyHint itself is a date (e.g. key is "2026-09-18")
+  if (isDateString(keyHint) && value && typeof value === 'object') {
+    const ds = keyHint;
+    const blocks = value.blocks || (value.tasks && typeof value.tasks === 'object' ? value.tasks : {});
+    const blocksList = Array.isArray(value.blocksList) ? value.blocksList : (Array.isArray(value.tasks) ? value.tasks : []);
+    const dailyScore = typeof value.dailyScore === 'number' ? value.dailyScore : (typeof value.score === 'number' ? value.score : 0);
+    recoveredDays[ds] = {
+      date: ds,
+      dailyScore,
+      blocks,
+      blocksList,
+      ...value,
+    };
+  }
+
+  // 4. Check if object has { date: "YYYY-MM-DD", blocks: ... }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (isDateString(value.date) && (value.blocks || value.blocksList || typeof value.dailyScore === 'number')) {
+      recoveredDays[value.date] = value;
+    }
+  }
+
+  // 5. Check if value is a standard FocusOS date-keyed history dictionary
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    let hasDateKeys = false;
+    Object.entries(value).forEach(([k, dayVal]) => {
+      if (isDateString(k) && dayVal && typeof dayVal === 'object') {
+        recoveredDays[k] = {
+          date: k,
+          dailyScore: typeof dayVal.dailyScore === 'number' ? dayVal.dailyScore : 0,
+          blocks: dayVal.blocks || {},
+          blocksList: dayVal.blocksList || [],
+          ...dayVal,
+        };
+        hasDateKeys = true;
+      }
+    });
+
+    // 6. Check preset arrays
+    if (isPresetArray(value)) {
+      recoveredPresets = value;
+    }
+    if (Array.isArray(value.presets) && isPresetArray(value.presets)) {
+      recoveredPresets = value.presets;
+    }
+
+    // 7. If not already handled, search nested properties (e.g. history, data, state, timeline)
+    if (!hasDateKeys) {
+      const candidateKeys = ['history', 'days', 'logs', 'records', 'timeline', 'data', 'state', 'appState', 'v2', 'v1', 'savedState'];
+      for (const prop of candidateKeys) {
+        if (value[prop] && typeof value[prop] === 'object') {
+          const nested = extractHistoryAndPresetsFromAny(value[prop], prop, depth + 1);
+          Object.assign(recoveredDays, nested.recoveredDays);
+          if (nested.recoveredPresets && (!recoveredPresets || nested.recoveredPresets.length > recoveredPresets.length)) {
+            recoveredPresets = nested.recoveredPresets;
+          }
+        }
+      }
+    }
+  }
+
+  // 8. If value is an Array of days / logs
+  if (Array.isArray(value)) {
+    if (isPresetArray(value)) {
+      recoveredPresets = value;
+    } else {
+      value.forEach((item, idx) => {
+        if (item && typeof item === 'object') {
+          if (isDateString(item.date)) {
+            recoveredDays[item.date] = {
+              date: item.date,
+              dailyScore: typeof item.dailyScore === 'number' ? item.dailyScore : 0,
+              blocks: item.blocks || {},
+              blocksList: item.blocksList || [],
+              ...item,
+            };
+          } else {
+            const nested = extractHistoryAndPresetsFromAny(item, `item_${idx}`, depth + 1);
+            Object.assign(recoveredDays, nested.recoveredDays);
+            if (nested.recoveredPresets && (!recoveredPresets || nested.recoveredPresets.length > recoveredPresets.length)) {
+              recoveredPresets = nested.recoveredPresets;
+            }
+          }
+        }
+      });
+    }
+  }
+
+  return { recoveredDays, recoveredPresets };
+}
+
+/**
  * Exhaustively scans window.localStorage across all keys
  */
 function scanLocalStorage() {
   const recoveredDays = {};
   let recoveredPresets = null;
+  const keyDetails = [];
   let keysScanned = 0;
 
   if (typeof window === 'undefined' || !window.localStorage) {
-    return { recoveredDays, recoveredPresets, keysScanned };
+    return { recoveredDays, recoveredPresets, keysScanned, keyDetails };
   }
 
   try {
@@ -563,51 +929,32 @@ function scanLocalStorage() {
 
       try {
         const raw = window.localStorage.getItem(key);
-        if (!raw || raw.length < 2) continue;
-        const data = JSON.parse(raw);
+        if (!raw) continue;
 
-        // Check if data is history dictionary
-        if (isHistoryRecord(data)) {
-          if (data.date && (data.blocks || data.blocksList)) {
-            recoveredDays[data.date] = data;
-          } else {
-            Object.entries(data).forEach(([ds, dayVal]) => {
-              if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && dayVal && typeof dayVal === 'object') {
-                recoveredDays[ds] = dayVal;
-              }
-            });
-          }
-        }
+        const sizeKb = (raw.length / 1024).toFixed(1);
+        keyDetails.push({
+          key,
+          length: raw.length,
+          sizeKb: `${sizeKb} KB`,
+          preview: raw.slice(0, 100) + (raw.length > 100 ? '...' : ''),
+        });
 
-        // Check if data has nested history (e.g. data.history)
-        if (data && typeof data === 'object' && data.history && isHistoryRecord(data.history)) {
-          Object.entries(data.history).forEach(([ds, dayVal]) => {
-            if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && dayVal && typeof dayVal === 'object') {
-              recoveredDays[ds] = dayVal;
-            }
-          });
-        }
+        // Run universal extractor on raw string / parsed JSON
+        const extracted = extractHistoryAndPresetsFromAny(raw, key);
+        Object.assign(recoveredDays, extracted.recoveredDays);
 
-        // Check if presets
-        if (isPresetArray(data)) {
-          if (!recoveredPresets || data.length > recoveredPresets.length) {
-            recoveredPresets = data;
-          }
+        if (extracted.recoveredPresets && (!recoveredPresets || extracted.recoveredPresets.length > recoveredPresets.length)) {
+          recoveredPresets = extracted.recoveredPresets;
         }
-        if (data && Array.isArray(data.presets) && isPresetArray(data.presets)) {
-          if (!recoveredPresets || data.presets.length > recoveredPresets.length) {
-            recoveredPresets = data.presets;
-          }
-        }
-      } catch {
-        // Non-JSON key, skip
+      } catch (keyErr) {
+        console.warn(`LocalStorage scan error on key "${key}":`, keyErr);
       }
     }
   } catch (err) {
     console.warn('LocalStorage scan warning:', err);
   }
 
-  return { recoveredDays, recoveredPresets, keysScanned };
+  return { recoveredDays, recoveredPresets, keysScanned, keyDetails };
 }
 
 /**
@@ -616,14 +963,15 @@ function scanLocalStorage() {
 async function scanIndexedDB() {
   const recoveredDays = {};
   let recoveredPresets = null;
+  const dbDetails = [];
   let dbsScanned = 0;
   let storesScanned = 0;
 
   if (typeof window === 'undefined' || !window.indexedDB) {
-    return { recoveredDays, recoveredPresets, dbsScanned, storesScanned };
+    return { recoveredDays, recoveredPresets, dbsScanned, storesScanned, dbDetails };
   }
 
-  // Candidate DB names across past and present FocusOS builds
+  // Candidate DB names across past and present FocusOS and Study Planner builds
   const candidateDBs = [
     "FocusOS_PWA_DB",
     "FocusOS_DB",
@@ -633,6 +981,10 @@ async function scanIndexedDB() {
     "app_data",
     "keyval-store",
     "localforage",
+    "mission-plustwo",
+    "plustwo",
+    "plustwo_db",
+    "firebaseLocalStorageDb",
   ];
 
   try {
@@ -651,18 +1003,54 @@ async function scanIndexedDB() {
   for (const dbName of candidateDBs) {
     try {
       const db = await new Promise((resolve) => {
+        let finished = false;
+        const timer = setTimeout(() => {
+          if (!finished) {
+            finished = true;
+            resolve(null);
+          }
+        }, 1500);
+
         try {
           const req = indexedDB.open(dbName);
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => resolve(null);
-          req.onblocked = () => resolve(null);
+          req.onsuccess = () => {
+            if (!finished) {
+              finished = true;
+              clearTimeout(timer);
+              resolve(req.result);
+            }
+          };
+          req.onerror = () => {
+            if (!finished) {
+              finished = true;
+              clearTimeout(timer);
+              resolve(null);
+            }
+          };
+          req.onblocked = () => {
+            if (!finished) {
+              finished = true;
+              clearTimeout(timer);
+              resolve(null);
+            }
+          };
         } catch {
-          resolve(null);
+          if (!finished) {
+            finished = true;
+            clearTimeout(timer);
+            resolve(null);
+          }
         }
       });
 
       if (!db) continue;
       dbsScanned++;
+
+      const currentDbInfo = {
+        dbName,
+        version: db.version,
+        stores: [],
+      };
 
       const storeNames = Array.from(db.objectStoreNames || []);
       for (const storeName of storeNames) {
@@ -672,60 +1060,69 @@ async function scanIndexedDB() {
             try {
               const tx = db.transaction(storeName, 'readonly');
               const store = tx.objectStore(storeName);
-              const items = [];
-              const cursorReq = store.openCursor();
-              cursorReq.onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor) {
-                  items.push({ key: cursor.key, val: cursor.value });
-                  cursor.continue();
-                } else {
-                  resolve(items);
-                }
-              };
-              cursorReq.onerror = () => resolve([]);
+
+              // Use store.getAll() and store.getAllKeys() if supported, with cursor fallback
+              if (typeof store.getAll === 'function' && typeof store.getAllKeys === 'function') {
+                const keysReq = store.getAllKeys();
+                keysReq.onsuccess = () => {
+                  const keys = keysReq.result || [];
+                  const valsReq = store.getAll();
+                  valsReq.onsuccess = () => {
+                    const vals = valsReq.result || [];
+                    const items = keys.map((k, idx) => ({ key: k, val: vals[idx] }));
+                    resolve(items);
+                  };
+                  valsReq.onerror = () => resolve([]);
+                };
+                keysReq.onerror = () => resolve([]);
+              } else {
+                const items = [];
+                const cursorReq = store.openCursor();
+                cursorReq.onsuccess = (e) => {
+                  const cursor = e.target.result;
+                  if (cursor) {
+                    items.push({ key: cursor.key, val: cursor.value });
+                    cursor.continue();
+                  } else {
+                    resolve(items);
+                  }
+                };
+                cursorReq.onerror = () => resolve([]);
+              }
             } catch {
               resolve([]);
             }
           });
 
+          currentDbInfo.stores.push({
+            storeName,
+            recordCount: records.length,
+            sampleKeys: records.slice(0, 5).map(r => String(r.key)),
+          });
+
           for (const item of records) {
-            const val = item.val;
-            if (isHistoryRecord(val)) {
-              if (val.date && (val.blocks || val.blocksList)) {
-                recoveredDays[val.date] = val;
-              } else {
-                Object.entries(val).forEach(([ds, dayVal]) => {
-                  if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && dayVal && typeof dayVal === 'object') {
-                    recoveredDays[ds] = dayVal;
-                  }
-                });
-              }
-            }
-            if (val && typeof val === 'object' && val.history && isHistoryRecord(val.history)) {
-              Object.entries(val.history).forEach(([ds, dayVal]) => {
-                if (/^\d{4}-\d{2}-\d{2}$/.test(ds) && dayVal && typeof dayVal === 'object') {
-                  recoveredDays[ds] = dayVal;
-                }
-              });
-            }
-            if (isPresetArray(val)) {
-              if (!recoveredPresets || val.length > recoveredPresets.length) {
-                recoveredPresets = val;
-              }
+            const extracted = extractHistoryAndPresetsFromAny(item.val, String(item.key));
+            Object.assign(recoveredDays, extracted.recoveredDays);
+
+            if (extracted.recoveredPresets && (!recoveredPresets || extracted.recoveredPresets.length > recoveredPresets.length)) {
+              recoveredPresets = extracted.recoveredPresets;
             }
           }
         } catch (storeErr) {
           console.warn(`Scan error in store ${storeName}:`, storeErr);
         }
       }
-      db.close();
+
+      dbDetails.push(currentDbInfo);
+      try {
+        db.close();
+      } catch {}
     } catch {
       // Continue to next DB
     }
   }
 
-  return { recoveredDays, recoveredPresets, dbsScanned, storesScanned };
+  return { recoveredDays, recoveredPresets, dbsScanned, storesScanned, dbDetails };
 }
 
 /**
@@ -792,14 +1189,16 @@ async function performDeepScanAndRecover({ currentHistory = {}, currentPresets =
   const finalCount = Object.keys(mergedHistory).length;
   const newlyRecoveredDays = Math.max(0, finalCount - initialCount);
 
-  // Dual-redundant backup write
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem('fo6_history', JSON.stringify(mergedHistory));
-      window.localStorage.setItem('focusos_history_master_backup', JSON.stringify(mergedHistory));
-      window.localStorage.setItem('fo6_presets', JSON.stringify(mergedPresets));
-    }
-  } catch (e) {}
+  // Dual-redundant backup write if days were recovered
+  if (finalCount > 0) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('fo6_history', JSON.stringify(mergedHistory));
+        window.localStorage.setItem('focusos_history_master_backup', JSON.stringify(mergedHistory));
+        window.localStorage.setItem('fo6_presets', JSON.stringify(mergedPresets));
+      }
+    } catch (e) {}
+  }
 
   return {
     mergedHistory,
@@ -811,6 +1210,35 @@ async function performDeepScanAndRecover({ currentHistory = {}, currentPresets =
       totalDays: finalCount,
       newlyRecoveredDays,
     },
+    diagnostics: {
+      localStorageKeys: lsResult.keyDetails,
+      indexedDBs: idbResult.dbDetails,
+    },
+  };
+}
+
+/**
+ * Generate a complete raw storage diagnostic report
+ * Used by the Storage Inspector in Settings
+ */
+async function getRawStorageDiagnosticReport() {
+  const lsResult = scanLocalStorage();
+  const idbResult = await scanIndexedDB();
+
+  return {
+    timestamp: new Date().toISOString(),
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown',
+    localStorage: {
+      totalKeys: lsResult.keysScanned,
+      keys: lsResult.keyDetails,
+      detectedDaysCount: Object.keys(lsResult.recoveredDays).length,
+    },
+    indexedDB: {
+      totalDatabases: idbResult.dbsScanned,
+      databases: idbResult.dbDetails,
+      detectedDaysCount: Object.keys(idbResult.recoveredDays).length,
+    },
+    totalRecoverableDays: Object.keys({ ...lsResult.recoveredDays, ...idbResult.recoveredDays }).length,
   };
 }
 
@@ -844,28 +1272,29 @@ function exportBackupData({ history, presets, alarms, notificationConfig }) {
  */
 function parseImportBackup(jsonString) {
   try {
-    const data = JSON.parse(jsonString);
-    if (!data || typeof data !== 'object') throw new Error("Invalid JSON structure");
+    const extracted = extractHistoryAndPresetsFromAny(jsonString, 'imported_backup');
+    const dayCount = Object.keys(extracted.recoveredDays).length;
 
-    let history = {};
-    let presets = null;
+    let alarms = null;
+    let notificationConfig = null;
+    try {
+      const parsed = JSON.parse(jsonString);
+      if (parsed && typeof parsed === 'object') {
+        alarms = parsed.alarms || null;
+        notificationConfig = parsed.notificationConfig || null;
+      }
+    } catch {}
 
-    if (data.history && isHistoryRecord(data.history)) {
-      history = data.history;
-    } else if (isHistoryRecord(data)) {
-      history = data;
-    }
-
-    if (data.presets && isPresetArray(data.presets)) {
-      presets = data.presets;
+    if (dayCount === 0 && (!extracted.recoveredPresets || extracted.recoveredPresets.length === 0)) {
+      throw new Error("No activity days or schedules found in the imported file");
     }
 
     return {
       success: true,
-      history,
-      presets,
-      alarms: data.alarms || null,
-      notificationConfig: data.notificationConfig || null,
+      history: extracted.recoveredDays,
+      presets: extracted.recoveredPresets,
+      alarms,
+      notificationConfig,
     };
   } catch (err) {
     return {
@@ -2490,6 +2919,134 @@ function FocusOS() {
           >
             <Icon name="close" size={16} />
           </button>
+        </div>
+      </div>
+    );
+  };
+
+
+  // ─── RENDER: STORAGE INSPECTOR MODAL ───────────────────────────────────────
+  const renderStorageInspectorModal = () => {
+    if (!showStorageInspector) return null;
+    const lsKeys = storageReport?.localStorage?.keys || [];
+    const idbList = storageReport?.indexedDB?.databases || [];
+    const totalDays = storageReport?.totalRecoverableDays || 0;
+
+    return (
+      <div className="fixed inset-0 z-[3600] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 select-none animate-in fade-in duration-200">
+        <div className={`${themeColors.surface} border ${themeColors.border} w-full max-w-[460px] max-h-[85vh] rounded-[32px] p-5 shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300`}>
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-[#222]">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center font-black">
+                <Icon name="troubleshoot" size={18} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-gray-900 dark:text-white leading-none">
+                  Storage Inspector
+                </h3>
+                <span className="text-[10px] text-gray-400 font-medium">Device Storage & Recovery Diagnostic</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowStorageInspector(false)}
+              className="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#222] text-gray-500 flex items-center justify-center font-bold"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
+            {/* Summary Banner */}
+            <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-xs">
+              <div className="font-black text-blue-500 mb-1 flex items-center justify-between">
+                <span>Total Recoverable Days Detected:</span>
+                <span className="text-sm px-2 py-0.5 rounded-full bg-blue-500 text-white font-mono">{totalDays}</span>
+              </div>
+              <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                Found {lsKeys.length} LocalStorage keys and {idbList.length} IndexedDB databases.
+              </div>
+            </div>
+
+            {/* LocalStorage Breakdown */}
+            <div>
+              <div className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-wider mb-2 flex items-center justify-between">
+                <span>LocalStorage Keys ({lsKeys.length})</span>
+              </div>
+              <div className="space-y-2">
+                {lsKeys.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">No keys found in LocalStorage.</div>
+                ) : (
+                  lsKeys.map((k, idx) => (
+                    <div key={idx} className="p-2.5 rounded-xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#262626] text-xs">
+                      <div className="flex justify-between items-center font-mono font-bold text-gray-800 dark:text-gray-200">
+                        <span className="truncate max-w-[240px] text-blue-500">{k.key}</span>
+                        <span className="text-[10px] text-gray-400">{k.sizeKb}</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-400 truncate mt-1 bg-white dark:bg-[#111] p-1.5 rounded-lg border border-gray-100 dark:border-[#222]">
+                        {k.preview}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* IndexedDB Breakdown */}
+            <div>
+              <div className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-wider mb-2">
+                IndexedDB Databases ({idbList.length})
+              </div>
+              <div className="space-y-2">
+                {idbList.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">No accessible IndexedDB databases.</div>
+                ) : (
+                  idbList.map((db, idx) => (
+                    <div key={idx} className="p-2.5 rounded-xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#262626] text-xs">
+                      <div className="flex justify-between items-center font-bold text-gray-800 dark:text-gray-200">
+                        <span className="font-mono text-indigo-400 truncate">{db.dbName}</span>
+                        <span className="text-[10px] text-gray-400 font-mono">v{db.version}</span>
+                      </div>
+                      <div className="mt-1 space-y-1">
+                        {db.stores.map((st, sIdx) => (
+                          <div key={sIdx} className="flex justify-between text-[11px] text-gray-500">
+                            <span>Store: <strong className="text-gray-700 dark:text-gray-300 font-mono">{st.storeName}</strong></span>
+                            <span>{st.recordCount} records</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Footer */}
+          <div className="pt-3 border-t border-gray-100 dark:border-[#222] flex flex-col gap-2">
+            <button
+              onClick={async () => {
+                setShowStorageInspector(false);
+                await handleDeepScanStorage();
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md shadow-blue-500/25 flex items-center justify-center gap-1.5 active:scale-98 transition-all"
+            >
+              <Icon name="history" size={16} /> Force Restore All Detected Days
+            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCopyStorageReport}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-gray-100 dark:bg-[#222] text-xs font-black text-gray-700 dark:text-gray-300 flex items-center justify-center gap-1 hover:bg-gray-200 dark:hover:bg-[#2a2a2a] transition-all"
+              >
+                <Icon name="content_copy" size={14} /> Copy Diagnostic Dump
+              </button>
+              <button
+                onClick={() => setShowStorageInspector(false)}
+                className="py-2.5 px-4 rounded-xl bg-gray-100 dark:bg-[#222] text-xs font-bold text-gray-500"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );

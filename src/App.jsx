@@ -1653,6 +1653,134 @@ function FocusOS() {
     );
   };
 
+
+  // ─── RENDER: STORAGE INSPECTOR MODAL ───────────────────────────────────────
+  const renderStorageInspectorModal = () => {
+    if (!showStorageInspector) return null;
+    const lsKeys = storageReport?.localStorage?.keys || [];
+    const idbList = storageReport?.indexedDB?.databases || [];
+    const totalDays = storageReport?.totalRecoverableDays || 0;
+
+    return (
+      <div className="fixed inset-0 z-[3600] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 select-none animate-in fade-in duration-200">
+        <div className={`${themeColors.surface} border ${themeColors.border} w-full max-w-[460px] max-h-[85vh] rounded-[32px] p-5 shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300`}>
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-[#222]">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center font-black">
+                <Icon name="troubleshoot" size={18} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-gray-900 dark:text-white leading-none">
+                  Storage Inspector
+                </h3>
+                <span className="text-[10px] text-gray-400 font-medium">Device Storage & Recovery Diagnostic</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowStorageInspector(false)}
+              className="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#222] text-gray-500 flex items-center justify-center font-bold"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
+            {/* Summary Banner */}
+            <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-xs">
+              <div className="font-black text-blue-500 mb-1 flex items-center justify-between">
+                <span>Total Recoverable Days Detected:</span>
+                <span className="text-sm px-2 py-0.5 rounded-full bg-blue-500 text-white font-mono">{totalDays}</span>
+              </div>
+              <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                Found {lsKeys.length} LocalStorage keys and {idbList.length} IndexedDB databases.
+              </div>
+            </div>
+
+            {/* LocalStorage Breakdown */}
+            <div>
+              <div className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-wider mb-2 flex items-center justify-between">
+                <span>LocalStorage Keys ({lsKeys.length})</span>
+              </div>
+              <div className="space-y-2">
+                {lsKeys.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">No keys found in LocalStorage.</div>
+                ) : (
+                  lsKeys.map((k, idx) => (
+                    <div key={idx} className="p-2.5 rounded-xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#262626] text-xs">
+                      <div className="flex justify-between items-center font-mono font-bold text-gray-800 dark:text-gray-200">
+                        <span className="truncate max-w-[240px] text-blue-500">{k.key}</span>
+                        <span className="text-[10px] text-gray-400">{k.sizeKb}</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-gray-400 truncate mt-1 bg-white dark:bg-[#111] p-1.5 rounded-lg border border-gray-100 dark:border-[#222]">
+                        {k.preview}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* IndexedDB Breakdown */}
+            <div>
+              <div className="text-xs font-black text-gray-900 dark:text-white uppercase tracking-wider mb-2">
+                IndexedDB Databases ({idbList.length})
+              </div>
+              <div className="space-y-2">
+                {idbList.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">No accessible IndexedDB databases.</div>
+                ) : (
+                  idbList.map((db, idx) => (
+                    <div key={idx} className="p-2.5 rounded-xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#262626] text-xs">
+                      <div className="flex justify-between items-center font-bold text-gray-800 dark:text-gray-200">
+                        <span className="font-mono text-indigo-400 truncate">{db.dbName}</span>
+                        <span className="text-[10px] text-gray-400 font-mono">v{db.version}</span>
+                      </div>
+                      <div className="mt-1 space-y-1">
+                        {db.stores.map((st, sIdx) => (
+                          <div key={sIdx} className="flex justify-between text-[11px] text-gray-500">
+                            <span>Store: <strong className="text-gray-700 dark:text-gray-300 font-mono">{st.storeName}</strong></span>
+                            <span>{st.recordCount} records</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Footer */}
+          <div className="pt-3 border-t border-gray-100 dark:border-[#222] flex flex-col gap-2">
+            <button
+              onClick={async () => {
+                setShowStorageInspector(false);
+                await handleDeepScanStorage();
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md shadow-blue-500/25 flex items-center justify-center gap-1.5 active:scale-98 transition-all"
+            >
+              <Icon name="history" size={16} /> Force Restore All Detected Days
+            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCopyStorageReport}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-gray-100 dark:bg-[#222] text-xs font-black text-gray-700 dark:text-gray-300 flex items-center justify-center gap-1 hover:bg-gray-200 dark:hover:bg-[#2a2a2a] transition-all"
+              >
+                <Icon name="content_copy" size={14} /> Copy Diagnostic Dump
+              </button>
+              <button
+                onClick={() => setShowStorageInspector(false)}
+                className="py-2.5 px-4 rounded-xl bg-gray-100 dark:bg-[#222] text-xs font-bold text-gray-500"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ─── RENDER: RINGING ALARM MODAL ────────────────────────────────────────────
   const renderAlarmModal = () => {
     if (!activeAlarm) return null;
