@@ -189,7 +189,7 @@ function calculateAutoSleepTime(todaysBlocks) {
  */
 
 
-const to12h = (t) => {
+const format12hTime = (t) => {
   if (!t || !t.includes(':')) return '';
   const [h, m] = t.split(':').map(Number);
   const ap = h >= 12 ? 'PM' : 'AM';
@@ -310,7 +310,7 @@ function checkScheduleNotifications({
   if (endingTasks.length > 0 && startingTasks.length > 0) {
     const endingNames = endingTasks.map((b) => b.name).join(', ');
     const startingNames = startingTasks.map((b) => b.name).join(', ');
-    const nextStartTimes = startingTasks.map((b) => to12h(b.start)).join(', ');
+    const nextStartTimes = startingTasks.map((b) => format12hTime(b.start)).join(', ');
 
     dispatchNotification({
       title: `🔄 Schedule Handover (${nextStartTimes})`,
@@ -324,7 +324,7 @@ function checkScheduleNotifications({
   endingTasks.forEach((block) => {
     dispatchNotification({
       title: `🏁 Task Completed: ${block.name}`,
-      body: `Ended at ${to12h(block.end)}. Great job!`,
+      body: `Ended at ${format12hTime(block.end)}. Great job!`,
       onInAppToast,
     });
   });
@@ -334,8 +334,8 @@ function checkScheduleNotifications({
     const isInstant = lead === 0;
     const title = isInstant ? `⚡ Starting Now: ${block.name}` : `⏳ Upcoming: ${block.name}`;
     const body = isInstant
-      ? `Scheduled from ${to12h(block.start)} to ${to12h(block.end)}.`
-      : `Starts in ${lead} minute${lead > 1 ? 's' : ''} at ${to12h(block.start)}.`;
+      ? `Scheduled from ${format12hTime(block.start)} to ${format12hTime(block.end)}.`
+      : `Starts in ${lead} minute${lead > 1 ? 's' : ''} at ${format12hTime(block.start)}.`;
 
     dispatchNotification({
       title,
