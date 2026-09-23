@@ -19,7 +19,7 @@ jobs:
           node-version: 22
 
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci || npm install
 
       - name: Build Production Assets
         run: npm run build
