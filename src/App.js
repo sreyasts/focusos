@@ -2739,7 +2739,14 @@ function FocusOS() {
   const openPartialModal = (block) => {
     setPartialModal({ block });
     const fullDur = mins(block?.start, block?.end);
-    setPartialMins(Math.min(fullDur, Math.round(fullDur * 0.75)) || 30);
+    const existing = history[selDate]?.blocks?.[block?.id];
+    const initialMins = existing?.actualMins || Math.min(fullDur, Math.round(fullDur * 0.75)) || 30;
+    setPartialMins(initialMins);
+    if (existing?.reason) {
+      setPartialReason(existing.reason);
+    } else {
+      setPartialReason("Standard task progress");
+    }
     pushHash("#partial");
   };
 
@@ -3543,176 +3550,203 @@ function FocusOS() {
     );
   };
 
-  // ─── RENDER: OVERHAULED TIME LOGGING MODAL (HOURS & MINUTES) ────────────────
+  // ─── RENDER: SIMPLIFIED, INTUITIVE TIME LOGGING MODAL ──────────────────────
   const renderPartialModal = () => {
     if (!partialModal || !partialModal.block) return null;
     const hours = Math.floor(partialMins / 60);
     const minutes = partialMins % 60;
-    const fullDuration = mins(partialModal.block.start, partialModal.block.end);
+    const fullDuration = mins(partialModal.block.start, partialModal.block.end) || 60;
+    const pct = fullDuration > 0 ? Math.round((partialMins / fullDuration) * 100) : 100;
+    const isOvertime = partialMins > fullDuration;
+
+    // 4 clean contextual presets (25%, 50%, 75%, 100%)
+    const presetsList = [
+      { label: "25%", mins: Math.max(5, Math.round((fullDuration * 0.25) / 5) * 5) },
+      { label: "50%", mins: Math.max(5, Math.round((fullDuration * 0.50) / 5) * 5) },
+      { label: "75%", mins: Math.max(5, Math.round((fullDuration * 0.75) / 5) * 5) },
+      { label: "Full", mins: fullDuration },
+    ].filter((p, idx, arr) => arr.findIndex((x) => x.mins === p.mins) === idx);
+
+    const sliderMax = Math.max(120, Math.ceil((fullDuration * 1.5) / 15) * 15, Math.ceil(partialMins / 15) * 15 + 15);
 
     return (
-      <div className="fixed inset-0 bg-black/80 z-[2000] flex flex-col justify-end p-3 animate-in fade-in select-none backdrop-blur-sm">
+      <div className="fixed inset-0 bg-black/80 z-[2000] flex flex-col justify-end sm:justify-center p-3 sm:p-4 animate-in fade-in select-none backdrop-blur-sm">
         <div
-          className={`${themeColors.surface} rounded-[36px] p-6 w-full max-w-[420px] mx-auto border ${themeColors.border} shadow-2xl`}
+          className={`${themeColors.surface} rounded-[32px] p-6 w-full max-w-[420px] mx-auto border ${themeColors.border} shadow-2xl transition-all`}
         >
-          <div className="w-12 h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full mx-auto mb-6" />
+          {/* Mobile Handle indicator */}
+          <div className="w-12 h-1.5 bg-gray-300 dark:bg-gray-700 rounded-full mx-auto mb-5 sm:hidden" />
 
-          <div className="text-center mb-6">
-            <div
-              className={`text-[10px] uppercase tracking-[2px] font-mono font-bold ${themeColors.text3} mb-1`}
-            >
-              Time Tracking & Logging
-            </div>
-            <div className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
-              {partialModal.block.name}
-            </div>
-            <div className="text-xs text-gray-500 font-mono mt-1">
-              Scheduled: {to12h(partialModal.block.start)} – {to12h(partialModal.block.end)} ({fullDuration}m)
-            </div>
-          </div>
-
-          {/* Dual Hours & Minutes Stepper */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            {/* Hours Box */}
-            <div
-              className={`p-3.5 rounded-2xl ${themeColors.surface2} border ${themeColors.border} flex flex-col items-center`}
-            >
-              <span className={`text-[10px] font-mono uppercase tracking-widest font-bold ${themeColors.text3} mb-2`}>
-                Hours
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPartialMins(Math.max(0, partialMins - 60))}
-                  className="w-9 h-9 rounded-xl bg-black/10 dark:bg-white/10 flex items-center justify-center font-black text-sm active:scale-90 transition-transform"
-                >
-                  -1h
-                </button>
-                <input
-                  type="number"
-                  min="0"
-                  value={hours}
-                  onChange={(e) => {
-                    const h = Math.max(0, parseInt(e.target.value, 10) || 0);
-                    setPartialMins(h * 60 + minutes);
-                  }}
-                  className="text-3xl font-black bg-transparent outline-none w-14 text-center text-[#FF9F0A]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setPartialMins(partialMins + 60)}
-                  className="w-9 h-9 rounded-xl bg-black/10 dark:bg-white/10 flex items-center justify-center font-black text-sm active:scale-90 transition-transform"
-                >
-                  +1h
-                </button>
-              </div>
-            </div>
-
-            {/* Minutes Box */}
-            <div
-              className={`p-3.5 rounded-2xl ${themeColors.surface2} border ${themeColors.border} flex flex-col items-center`}
-            >
-              <span className={`text-[10px] font-mono uppercase tracking-widest font-bold ${themeColors.text3} mb-2`}>
-                Minutes
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPartialMins(Math.max(0, partialMins - 10))}
-                  className="w-9 h-9 rounded-xl bg-black/10 dark:bg-white/10 flex items-center justify-center font-black text-xs active:scale-90 transition-transform"
-                >
-                  -10m
-                </button>
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  value={minutes}
-                  onChange={(e) => {
-                    const m = Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0));
-                    setPartialMins(hours * 60 + m);
-                  }}
-                  className="text-3xl font-black bg-transparent outline-none w-14 text-center text-[#FF9F0A]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setPartialMins(partialMins + 10)}
-                  className="w-9 h-9 rounded-xl bg-black/10 dark:bg-white/10 flex items-center justify-center font-black text-xs active:scale-90 transition-transform"
-                >
-                  +10m
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Total Duration Readout Badge */}
-          <div className="text-center mb-4">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FF9F0A]/15 text-[#FF9F0A] text-xs font-black tracking-wide">
-              <Icon name="timer" size={14} />
-              Total Logged: {hours > 0 ? `${hours}h ` : ""}{minutes}m ({partialMins} mins total)
+          {/* Header */}
+          <div className="text-center mb-5">
+            <span className="inline-flex items-center gap-1 text-[11px] font-mono uppercase tracking-widest font-bold text-[#FF9F0A] bg-[#FF9F0A]/10 px-2.5 py-0.5 rounded-full mb-2">
+              <Icon name="timer" size={12} />
+              Log Time
             </span>
+            <h3 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white">
+              {partialModal.block.name}
+            </h3>
+            <p className="text-xs text-gray-500 font-mono mt-1">
+              Scheduled: {to12h(partialModal.block.start)} – {to12h(partialModal.block.end)} ({fullDuration}m)
+            </p>
           </div>
 
-          {/* Quick Preset Buttons */}
-          <div className="flex flex-wrap justify-center gap-1.5 mb-5">
-            {[
-              10,
-              15,
-              30,
-              45,
-              60,
-              90,
-              120,
-              fullDuration,
-            ]
-              .filter(Boolean)
-              .filter((v, i, a) => a.indexOf(v) === i)
-              .map((m) => (
+          {/* Main Hero Duration & Progress Box */}
+          <div className={`p-4 rounded-2xl ${themeColors.surface2} border ${themeColors.border} mb-4`}>
+            {/* Big readable duration */}
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <input
+                type="number"
+                min="1"
+                max="999"
+                value={partialMins}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val)) setPartialMins(Math.max(1, Math.min(999, val)));
+                }}
+                className="text-5xl font-black text-[#FF9F0A] bg-transparent outline-none text-center w-28 tracking-tight font-mono focus:border-b-2 focus:border-[#FF9F0A]"
+              />
+              <div className="flex flex-col text-left">
+                <span className="text-sm font-extrabold uppercase tracking-wide text-gray-500">
+                  {partialMins === 1 ? "min" : "mins"}
+                </span>
+                {hours > 0 && (
+                  <span className="text-xs font-mono font-bold text-gray-400">
+                    {hours}h {minutes > 0 ? `${minutes}m` : ""}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Visual Progress Bar */}
+            <div className="w-full bg-black/10 dark:bg-white/10 h-2 rounded-full overflow-hidden mb-2">
+              <div
+                className={`h-full transition-all duration-300 rounded-full ${
+                  isOvertime ? "bg-emerald-500" : "bg-[#FF9F0A]"
+                }`}
+                style={{ width: `${Math.min(100, pct)}%` }}
+              />
+            </div>
+
+            {/* Completion Percentage Info */}
+            <div className="flex justify-between items-center text-xs font-mono font-semibold px-0.5 mb-3">
+              <span className={isOvertime ? "text-emerald-500 font-bold" : "text-gray-500 dark:text-gray-400"}>
+                {pct}% {isOvertime ? `(Overtime +${partialMins - fullDuration}m)` : "completed"}
+              </span>
+              <span className="text-gray-400">Target: {fullDuration}m</span>
+            </div>
+
+            {/* Smooth Slider & Step Buttons */}
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPartialMins(Math.max(5, partialMins - 15))}
+                className="h-9 px-2.5 rounded-xl bg-black/5 dark:bg-white/10 flex items-center justify-center font-bold text-xs text-gray-700 dark:text-gray-300 active:scale-95 transition-transform"
+                title="Decrease 15m"
+              >
+                -15
+              </button>
+              <button
+                type="button"
+                onClick={() => setPartialMins(Math.max(5, partialMins - 5))}
+                className="h-9 px-2 rounded-xl bg-black/5 dark:bg-white/10 flex items-center justify-center font-bold text-xs text-gray-700 dark:text-gray-300 active:scale-95 transition-transform"
+                title="Decrease 5m"
+              >
+                -5
+              </button>
+
+              <input
+                type="range"
+                min="5"
+                max={sliderMax}
+                step="5"
+                value={partialMins}
+                onChange={(e) => setPartialMins(parseInt(e.target.value, 10) || 5)}
+                className="flex-1 accent-[#FF9F0A] cursor-pointer h-2 bg-black/10 dark:bg-white/10 rounded-lg"
+              />
+
+              <button
+                type="button"
+                onClick={() => setPartialMins(partialMins + 5)}
+                className="h-9 px-2 rounded-xl bg-black/5 dark:bg-white/10 flex items-center justify-center font-bold text-xs text-gray-700 dark:text-gray-300 active:scale-95 transition-transform"
+                title="Increase 5m"
+              >
+                +5
+              </button>
+              <button
+                type="button"
+                onClick={() => setPartialMins(partialMins + 15)}
+                className="h-9 px-2.5 rounded-xl bg-black/5 dark:bg-white/10 flex items-center justify-center font-bold text-xs text-gray-700 dark:text-gray-300 active:scale-95 transition-transform"
+                title="Increase 15m"
+              >
+                +15
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Presets: 4 clean pills */}
+          <div className="grid grid-cols-4 gap-2 mb-4">
+            {presetsList.map((p) => {
+              const isSelected = partialMins === p.mins;
+              return (
                 <button
-                  key={m}
+                  key={p.mins}
                   type="button"
-                  onClick={() => setPartialMins(m)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    partialMins === m
-                      ? "bg-[#FF9F0A] text-black shadow-md scale-105"
-                      : `${themeColors.surface2} ${themeColors.text2} border ${themeColors.border}`
+                  onClick={() => setPartialMins(p.mins)}
+                  className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center transition-all ${
+                    isSelected
+                      ? "bg-[#FF9F0A] text-black font-black shadow-md shadow-[#FF9F0A]/20 scale-[1.02]"
+                      : `${themeColors.surface2} ${themeColors.text2} border ${themeColors.border} hover:bg-black/5 dark:hover:bg-white/5`
                   }`}
                 >
-                  {m >= 60 ? (m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h ${m % 60}m`) : `${m}m`}
-                  {m === fullDuration ? " (Full)" : ""}
+                  <span className="text-sm font-black tracking-tight">{p.mins}m</span>
+                  <span
+                    className={`text-[10px] uppercase font-bold tracking-wider ${
+                      isSelected ? "text-black/75" : themeColors.text3
+                    }`}
+                  >
+                    {p.label}
+                  </span>
                 </button>
-              ))}
+              );
+            })}
           </div>
 
-          <select
-            value={partialReason}
-            onChange={(e) => setPartialReason(e.target.value)}
-            className={`w-full p-3.5 rounded-2xl appearance-none outline-none ${themeColors.surface2} border ${themeColors.border} mb-6 font-bold text-center text-sm text-black dark:text-white`}
-          >
-            {[
-              "Standard task progress",
-              "Ran out of time",
-              "Got distracted",
-              "Low energy / fatigued",
-              "Interrupted",
-              "Bonus time / overtime",
-              "Sleep & recovery log",
-              "Other",
-            ].map((r) => (
-              <option key={r} className="bg-white dark:bg-black text-black dark:text-white">
-                {r}
-              </option>
-            ))}
-          </select>
+          {/* Reason / Note (Clean & Compact) */}
+          <div className="mb-5">
+            <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-gray-400 mb-1 px-1">
+              Note / Reason (Optional)
+            </div>
+            <div className="relative">
+              <select
+                value={partialReason}
+                onChange={(e) => setPartialReason(e.target.value)}
+                className={`w-full py-2.5 px-3 rounded-xl appearance-none outline-none ${themeColors.surface2} border ${themeColors.border} font-semibold text-xs text-gray-800 dark:text-gray-200 cursor-pointer`}
+              >
+                <option value="Standard task progress">Standard task progress</option>
+                <option value="Ran out of time">Ran out of time</option>
+                <option value="Got distracted / interrupted">Got distracted / interrupted</option>
+                <option value="Low energy / fatigued">Low energy / fatigued</option>
+                <option value="Bonus / overtime session">Bonus / overtime session</option>
+                <option value="Other">Other</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-xs">
+                ▼
+              </div>
+            </div>
+          </div>
 
+          {/* Action Buttons */}
           <div className="flex gap-3">
             <button
+              type="button"
               onClick={() => closeModal(() => setPartialModal(null))}
-              className={`flex-1 py-3.5 rounded-2xl ${themeColors.surface2} font-black active:opacity-70 transition-opacity`}
+              className={`flex-1 py-3.5 rounded-2xl ${themeColors.surface2} font-bold text-sm text-gray-600 dark:text-gray-300 active:scale-[0.98] transition-transform`}
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={() => {
                 mark(partialModal.block.id, "partial", {
                   actualMins: partialMins,
@@ -3720,9 +3754,9 @@ function FocusOS() {
                 });
                 closeModal(() => setPartialModal(null));
               }}
-              className="flex-1 py-3.5 rounded-2xl bg-[#FF9F0A] text-black font-black active:opacity-70 transition-opacity shadow-lg shadow-[#FF9F0A]/20"
+              className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-[#FF9F0A] to-[#FF8000] text-black font-black text-sm active:scale-[0.98] transition-transform shadow-lg shadow-[#FF9F0A]/20"
             >
-              Save Log
+              Log {partialMins}m
             </button>
           </div>
         </div>
