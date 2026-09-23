@@ -460,48 +460,7 @@ const pBadge = (priority) => {
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
-const DEFAULT_PRESETS = [
-  {
-    id: "p1",
-    name: "Skills / Python / AI",
-    start: "05:00",
-    end: "06:00",
-    priority: "highest",
-    days: [1, 2, 3, 4, 5],
-    icon: "code",
-    zeroXp: false,
-  },
-  {
-    id: "p2",
-    name: "Gym",
-    start: "06:30",
-    end: "07:30",
-    priority: "medium",
-    days: [1, 2, 3, 4, 5, 6],
-    icon: "fitness_center",
-    zeroXp: false,
-  },
-  {
-    id: "p7",
-    name: "Study (Evening)",
-    start: "19:00",
-    end: "20:30",
-    priority: "highest",
-    days: [1, 2, 3, 4, 5, 0, 6],
-    icon: "menu_book",
-    zeroXp: false,
-  },
-  {
-    id: "p10",
-    name: "Sleep",
-    start: "22:00",
-    end: "05:00",
-    priority: "medium",
-    days: [0, 1, 2, 3, 4, 5, 6],
-    icon: "dark_mode",
-    zeroXp: false,
-  },
-];
+const DEFAULT_PRESETS = [];
 
 // ─── UTILITIES ────────────────────────────────────────────────────────────────
 const localDateStr = (date = new Date()) => {
@@ -607,6 +566,7 @@ const TaskItem = ({
   onOpenPartial,
   onEdit,
   onDeleteFromToday,
+  onDeletePreset,
   onDuplicate,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -804,10 +764,23 @@ const TaskItem = ({
                     setMenuOpen(false);
                     onDeleteFromToday(block.id);
                   }}
-                  className="w-full px-4 py-2.5 text-left text-xs font-bold text-[#FF3B30] flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#222]"
+                  className="w-full px-4 py-2.5 text-left text-xs font-bold text-amber-500 flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#222]"
                 >
-                  <Icon name="delete" size={16} /> Remove Today
+                  <Icon name="event_busy" size={16} /> Skip Today Only
                 </button>
+                {onDeletePreset && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      if (window.confirm(`Permanently remove routine "${block.name}"?`)) {
+                        onDeletePreset(block.id);
+                      }
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-[#FF3B30] flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#222]"
+                  >
+                    <Icon name="delete_forever" size={16} /> Delete Routine
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1066,8 +1039,74 @@ function FocusOS() {
           }
         }
 
+        // 2. Remove legacy template sample routines if present
+        const LEGACY_SAMPLE_IDS = new Set(["p1", "p2", "p7", "p10"]);
+        if (Array.isArray(pres)) {
+          const cleanedPres = pres.filter(
+            (p) =>
+              p &&
+              !LEGACY_SAMPLE_IDS.has(p.id) &&
+              p.name !== "Skills / Python / AI" &&
+              p.name !== "Gym" &&
+              p.name !== "Study (Evening)" &&
+              p.name !== "Sleep"
+          );
+          if (cleanedPres.length !== pres.length) {
+            pres = cleanedPres;
+            await idbSet("fo6_presets", pres);
+            try {
+              localStorage.setItem("fo6_presets", JSON.stringify(pres));
+            } catch (e) {}
+          }
+        }
+
+        // Clean uncompleted legacy template sample blocks from today's timeline
+        if (hist && typeof hist === "object") {
+          const today = todayStr();
+          if (hist[today] && Array.isArray(hist[today].blocksList)) {
+            const hasLegacy = hist[today].blocksList.some(
+              (b) =>
+                b &&
+                (LEGACY_SAMPLE_IDS.has(b.id) ||
+                  b.name === "Skills / Python / AI" ||
+                  b.name === "Gym" ||
+                  b.name === "Study (Evening)" ||
+                  b.name === "Sleep")
+            );
+            if (hasLegacy) {
+              const cleanedList = hist[today].blocksList.filter(
+                (b) =>
+                  b &&
+                  !LEGACY_SAMPLE_IDS.has(b.id) &&
+                  b.name !== "Skills / Python / AI" &&
+                  b.name !== "Gym" &&
+                  b.name !== "Study (Evening)" &&
+                  b.name !== "Sleep"
+              );
+              const cleanedBlocks = {};
+              for (const [k, v] of Object.entries(hist[today].blocks || {})) {
+                if (!LEGACY_SAMPLE_IDS.has(k)) cleanedBlocks[k] = v;
+              }
+              const s = calcScore(cleanedList, cleanedBlocks);
+              hist = {
+                ...hist,
+                [today]: {
+                  ...hist[today],
+                  blocksList: cleanedList,
+                  blocks: cleanedBlocks,
+                  dailyScore: s,
+                },
+              };
+              await idbSet("fo6_history", hist);
+              try {
+                localStorage.setItem("fo6_history", JSON.stringify(hist));
+              } catch (e) {}
+            }
+          }
+        }
+
         setHistory(hist || {});
-        setPresets(Array.isArray(pres) && pres.length > 0 ? pres : DEFAULT_PRESETS);
+        setPresets(Array.isArray(pres) ? pres : []);
         setThemeMode(th || "system");
         setAlarms(savedAlarms);
         setNotificationConfig(savedNotif);
@@ -3187,7 +3226,15 @@ function FocusOS() {
             <div
               className={`${themeColors.surface} border ${themeColors.border} rounded-3xl p-8 text-center text-gray-400 font-medium`}
             >
-              No routines scheduled for this day.
+              <div className="w-12 h-12 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center mx-auto mb-3">
+                <Icon name="event_note" size={24} />
+              </div>
+              <div className="font-bold text-gray-900 dark:text-white text-base mb-1">
+                No routines scheduled
+              </div>
+              <div className="text-xs text-gray-400 max-w-xs mx-auto mb-1">
+                Your schedule is clean. Tap "+ Add Block" below to create your custom daily routine.
+              </div>
             </div>
           ) : (
             selBlocks.map((block) => {
@@ -3210,6 +3257,7 @@ function FocusOS() {
                   onOpenPartial={openPartialModal}
                   onEdit={openEditingPreset}
                   onDeleteFromToday={removeTaskFromToday}
+                  onDeletePreset={deletePreset}
                   onDuplicate={handleDuplicateRoutine}
                 />
               );
@@ -4098,10 +4146,10 @@ function FocusOS() {
           </div>
         </div>
 
-        {/* ─── PRESETS LIBRARY ──────────────────────────────────────────────── */}
+        {/* ─── ROUTINES LIBRARY ─────────────────────────────────────────────── */}
         <div className="flex justify-between items-end mb-3 ml-2">
           <div className={`text-[11px] font-mono tracking-[2px] font-bold uppercase ${themeColors.text3}`}>
-            Preset Routines Library
+            Daily Routines
           </div>
         </div>
         <div className={`${themeColors.surface} border ${themeColors.border} rounded-[32px] overflow-hidden mb-8 shadow-sm`}>
@@ -4124,50 +4172,62 @@ function FocusOS() {
           </button>
 
           <div className="max-h-[50vh] overflow-y-auto scroll-smooth">
-            {sortedPresets.map((p) => {
-              const tObj = to12hObj(p.start);
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => openEditingPreset(p)}
-                  className="flex flex-col p-5 border-b border-gray-100 dark:border-[#222] active:bg-gray-50 dark:active:bg-[#1a1a1a] cursor-pointer transition-colors group"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-3xl font-light tracking-tight leading-none text-gray-900 dark:text-white">
-                          {tObj.time}
-                        </span>
-                        <span className="text-xs font-bold text-gray-500 tracking-wider uppercase">
-                          {tObj.period}
-                        </span>
+            {sortedPresets.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 text-xs font-medium">
+                No routines configured. Tap "Create New Routine" above to add your first routine.
+              </div>
+            ) : sortedPresets.map((p) => {
+                const tObj = to12hObj(p.start);
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => openEditingPreset(p)}
+                    className="flex flex-col p-5 border-b border-gray-100 dark:border-[#222] active:bg-gray-50 dark:active:bg-[#1a1a1a] cursor-pointer transition-colors group"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-3xl font-light tracking-tight leading-none text-gray-900 dark:text-white">
+                            {tObj.time}
+                          </span>
+                          <span className="text-xs font-bold text-gray-500 tracking-wider uppercase">
+                            {tObj.period}
+                          </span>
+                        </div>
+                        <div className="text-sm font-black mt-2 flex items-center gap-1.5 text-gray-800 dark:text-gray-200 flex-wrap">
+                          <Icon name={p.icon || "monitoring"} size={16} />
+                          <span>{p.name}</span>
+                          {p.priority && !p.zeroXp && (
+                            <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${pBadge(p.priority).bg}`}>
+                              {pBadge(p.priority).text}
+                            </span>
+                          )}
+                          {p.zeroXp && (
+                            <span className="text-[9px] uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-black">
+                              0XP
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-sm font-black mt-2 flex items-center gap-1.5 text-gray-800 dark:text-gray-200 flex-wrap">
-                        <Icon name={p.icon || "monitoring"} size={16} />
-                        <span>{p.name}</span>
-                        {p.priority && !p.zeroXp && (
-                          <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${pBadge(p.priority).bg}`}>
-                            {pBadge(p.priority).text}
-                          </span>
-                        )}
-                        {p.zeroXp && (
-                          <span className="text-[9px] uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-black">
-                            0XP
-                          </span>
-                        )}
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs font-mono font-bold text-gray-400">
+                          {mins(p.start, p.end)}m
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Delete routine "${p.name}"?`)) {
+                              deletePreset(p.id);
+                            }
+                          }}
+                          className="p-1.5 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                          title="Delete routine"
+                        >
+                          <Icon name="delete" size={18} />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <Icon
-                        name="chevron_right"
-                        size={20}
-                        className={`opacity-0 group-hover:opacity-100 transition-opacity ${themeColors.text3}`}
-                      />
-                      <div className="text-xs font-mono font-bold text-gray-400 mt-1">
-                        {mins(p.start, p.end)}m
-                      </div>
-                    </div>
-                  </div>
                   <div className="flex gap-1.5">
                     {DAYS.map((d, i) => (
                       <div
@@ -4313,13 +4373,24 @@ function FocusOS() {
         <div className={`${themeColors.surface} border ${themeColors.border} rounded-[32px] overflow-hidden shadow-sm`}>
           <button
             onClick={() => {
-              if (window.confirm("Reset task presets to default system configuration?")) {
-                setPresets(DEFAULT_PRESETS);
+              if (window.confirm("Remove all routines? Your schedule will be completely cleared.")) {
+                setPresets([]);
+                idbSet("fo6_presets", []);
+                try {
+                  localStorage.setItem("fo6_presets", "[]");
+                } catch (e) {}
+                handleAddToast({
+                  id: Date.now(),
+                  title: "Routines Cleared",
+                  body: "All preset routines have been removed.",
+                  timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                });
               }
             }}
-            className="w-full p-5 text-left text-[#FF9F0A] font-black border-b border-gray-100 dark:border-[#222] active:bg-gray-50 dark:active:bg-[#1a1a1a] transition-colors text-sm"
+            className="w-full p-5 text-left text-[#FF9F0A] font-black border-b border-gray-100 dark:border-[#222] active:bg-gray-50 dark:active:bg-[#1a1a1a] transition-colors text-sm flex items-center justify-between"
           >
-            Factory Reset Default Routines
+            <span>Clear All Routines</span>
+            <Icon name="delete_sweep" size={18} />
           </button>
           <button
             onClick={() => {
