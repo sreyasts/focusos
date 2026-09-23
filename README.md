@@ -1,23 +1,23 @@
 <p align="center">
-  <img src="public/og-image.png" alt="FocusOS Header" width="100%" style="border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);" />
+  <img src="public/og-image.png" alt="TYMVERA Header" width="100%" style="border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);" />
 </p>
 
-<h1 align="center">FocusOS</h1>
+<h1 align="center">TYMVERA</h1>
 
 <p align="center">
-  <strong>The ultra-fast, distraction-free productivity OS and routine tracker built for ruthless daily consistency.</strong>
+  <strong>Your Daily Operating System — ultra-fast, distraction-free routine tracker built for ruthless daily consistency.</strong>
 </p>
 
 <p align="center">
-  <a href="https://focusos-web.web.app"><img src="https://img.shields.io/badge/Live%20App-focusos--web.web.app-10B981?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live App" /></a>
-  <a href="https://focusos-web.web.app"><img src="https://img.shields.io/badge/PWA-Installable-8B5CF6?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" /></a>
-  <a href="https://github.com/sreyasts/focusos/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/sreyasts/focusos/deploy.yml?branch=master&style=for-the-badge&label=Deploy&logo=githubactions&logoColor=white" alt="Deploy Status" /></a>
+  <a href="https://tymvera.web.app"><img src="https://img.shields.io/badge/Live%20App-tymvera.web.app-10B981?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live App" /></a>
+  <a href="https://tymvera.web.app"><img src="https://img.shields.io/badge/PWA-Installable-8B5CF6?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" /></a>
+  <a href="https://github.com/sreyasts/tymvera/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/sreyasts/tymvera/deploy.yml?branch=master&style=for-the-badge&label=Deploy&logo=githubactions&logoColor=white" alt="Deploy Status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License" /></a>
   <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 19" /></a>
 </p>
 
 <p align="center">
-  <a href="#-why-focusos">Why FocusOS</a> •
+  <a href="#-why-tymvera">Why TYMVERA</a> •
   <a href="#-live-app--instant-access">Live Demo</a> •
   <a href="#-core-features">Key Features</a> •
   <a href="#-mobile-pwa-installation">PWA Install</a> •
@@ -28,11 +28,11 @@
 
 ---
 
-## ⚡ Why FocusOS?
+## ⚡ Why TYMVERA?
 
 Most productivity apps trap you in **organizational procrastination**: endless nested sub-tasks, complex project boards, confusing menus, and intrusive paywalls that take more time to configure than actually doing the work.
 
-**FocusOS is different.** It is designed around one core reality: **Execution beats organization.**
+**TYMVERA is different.** It is designed around one core reality: **Execution beats organization.**
 
 * **No Clutter, Zero Friction**: Open the app, see your current scheduled time-block, and start executing.
 * **Weighted Priorities**: High-impact deep work (Physics, Code, Mathematics) contributes more to your score than low-friction tasks.
@@ -44,18 +44,18 @@ Most productivity apps trap you in **organizational procrastination**: endless n
 
 ## 🚀 Live App & Instant Access
 
-You can use FocusOS right now in your browser with **zero account required**:
+You can use TYMVERA right now in your browser with **zero account required**:
 
-**[👉 Launch FocusOS (focusos-web.web.app)](https://focusos-web.web.app)**
+**[👉 Launch TYMVERA (tymvera.web.app)](https://tymvera.web.app)**
 
-> FocusOS is built as an offline-first Progressive Web App (PWA). You can use it directly in any modern desktop or mobile browser, or install it to your home screen for a seamless standalone app experience.
+> TYMVERA is built as an offline-first Progressive Web App (PWA). You can use it directly in any modern desktop or mobile browser, or install it to your home screen for a seamless standalone app experience.
 
 ---
 
 ## 🎯 Core Features
 
 ### 1. 4-Tier Task Priorities & Weighted Scoring
-Tasks aren't created equal. FocusOS weights each task based on cognitive intensity:
+Tasks aren't created equal. TYMVERA weights each task based on cognitive intensity:
 * 🔴 **High Priority (`4x`)**: Core deep-work subjects (e.g., Mathematics, Coding, Hard Science).
 * 🔵 **Medium Priority (`3x`)**: Standard productive blocks (e.g., Revision, Problem Sets).
 * 🟡 **Low Priority (`2x`)**: Supporting habits (e.g., Reading, Housework, Admin).
@@ -67,10 +67,10 @@ Routines like *Going to School*, *Lunch*, *Travel*, or *Sleep* are critical to s
 ### 3. One-Tap Routine Duplication
 Study in the morning and again in the evening? Duplicate any existing routine in 1-tap:
 * Tap **Duplicate Routine** in the routine editor or task 3-dots menu (⋮).
-* FocusOS clones the name, icon, priority, and `0XP` settings, automatically calculating an evening time slot.
+* TYMVERA clones the name, icon, priority, and `0XP` settings, automatically calculating an evening time slot.
 
 ### 4. Multi-Session Aggregate Graphs & Interactive Scrubber
-* **Unified Daily Tracking**: If you have multiple sessions of the same subject on one day (e.g., Morning Study: 2.0h, Evening Study: 1.5h), FocusOS aggregates them into a **Total Daily Hours (3.5h)** metric.
+* **Unified Daily Tracking**: If you have multiple sessions of the same subject on one day (e.g., Morning Study: 2.0h, Evening Study: 1.5h), TYMVERA aggregates them into a **Total Daily Hours (3.5h)** metric.
 * **Interactive Scrubber Tooltip**: Drag your finger across the SVG chart to inspect itemized breakdowns and target completion states.
 * **Dedicated Task Graphs**: Switch instantly between `Overall Score`, `Study`, `Gym`, `Skills`, or add custom task curves via `+ Add Task Graph`.
 
@@ -96,7 +96,7 @@ Log partial task completion in seconds without mental math:
 * **Handover Detection**: Dispatches unified transition alerts when one block ends and the next begins.
 
 ### 8. Universal Client Storage & Cloud Sync
-* **Dual-Redundant Storage**: Saves every action simultaneously to IndexedDB and LocalStorage (`fo6_history` + `focusos_history_master_backup`).
+* **Dual-Redundant Storage**: Saves every action simultaneously to IndexedDB and LocalStorage.
 * **Deep Recovery Scanner**: Automatically scans all browser databases and recovers historical logs if a browser cache is cleared.
 * **Google Cloud Sync**: One-tap sign-in with Google to sync across phones, tablets, and laptops.
 
@@ -104,18 +104,18 @@ Log partial task completion in seconds without mental math:
 
 ## 📱 Mobile PWA Installation
 
-FocusOS is a fully certified Progressive Web App. You can install it directly to your home screen with zero app store downloads:
+TYMVERA is a fully certified Progressive Web App. You can install it directly to your home screen with zero app store downloads:
 
 ### On iPhone (iOS Safari):
-1. Open **[focusos-web.web.app](https://focusos-web.web.app)** in Safari.
+1. Open **[tymvera.web.app](https://tymvera.web.app)** in Safari.
 2. Tap the **Share** button (box with an arrow pointing up).
 3. Scroll down and tap **Add to Home Screen**.
-4. Tap **Add**. FocusOS now launches in full-screen standalone mode with no browser address bar!
+4. Tap **Add**. TYMVERA now launches in full-screen standalone mode with no browser address bar!
 
 ### On Android (Chrome):
-1. Open **[focusos-web.web.app](https://focusos-web.web.app)** in Chrome.
-2. Tap the **three dots menu** (⋮) or tap the **"Install FocusOS"** banner.
-3. Tap **Install**. FocusOS will be added to your app drawer and home screen.
+1. Open **[tymvera.web.app](https://tymvera.web.app)** in Chrome.
+2. Tap the **three dots menu** (⋮) or tap the **"Install TYMVERA"** banner.
+3. Tap **Install**. TYMVERA will be added to your app drawer and home screen.
 
 ---
 
@@ -128,8 +128,8 @@ FocusOS is a fully certified Progressive Web App. You can install it directly to
 ### Setup
 ```bash
 # 1. Clone the repository
-git clone https://github.com/sreyasts/focusos.git
-cd focusos
+git clone https://github.com/sreyasts/tymvera.git
+cd tymvera
 
 # 2. Install dependencies
 npm install --legacy-peer-deps
@@ -155,10 +155,10 @@ npm run preview
 ## 🏗️ Architecture & Tech Stack
 
 ```
-focusos/
+tymvera/
 ├── .github/workflows/       # GitHub Actions CI/CD (auto-deploy on push to master)
-├── public/                  # PWA Manifest, Authentic FocusOS icons, SEO sitemap & robots.txt
-│   ├── icon.png             # Authentic high-resolution 1254x1254 FocusOS icon
+├── public/                  # PWA Manifest, TYMVERA icons, SEO sitemap & robots.txt
+│   ├── icon.png             # High-resolution TYMVERA icon
 │   ├── og-image.png         # OpenGraph 1200x630 social share card
 │   ├── manifest.json        # PWA configuration
 │   ├── sitemap.xml          # Search engine index sitemap
@@ -169,7 +169,7 @@ focusos/
 │   │   ├── notificationEngine.js # Lead-time notifications & in-app toast dispatcher
 │   │   ├── storageRecovery.js    # Universal dual-storage engine & deep recovery crawler
 │   │   └── firebaseAuth.js       # Firebase Auth & Firestore cloud sync
-│   ├── App.jsx              # Main FocusOS application
+│   ├── App.jsx              # Main TYMVERA application
 │   ├── App.js               # Standalone self-contained single-file bundle distribution
 │   └── index.jsx            # React root mount
 └── vite.config.mjs          # Fast Vite bundler configuration

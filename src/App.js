@@ -709,7 +709,7 @@ async function loadUserDataFromCloud(userId) {
  * FocusOS Universal Storage & Data Recovery Engine
  * Exhaustively scans all available client storage:
  * - window.localStorage (FocusOS history, PlusTwo mission state, backups, raw date keys)
- * - All IndexedDB databases & stores (FocusOS_PWA_DB, FocusOS_DB, Firestore cache, keyval, localforage)
+ * - All IndexedDB databases & stores (TYMVERA_PWA_DB, FocusOS_DB, Firestore cache, keyval, localforage)
  * - Deep multi-schema parser: FocusOS history format, Kerala Plus Two study planner plans,
  *   Firestore offline caches, raw arrays of logs, double-stringified JSON, and date-keyed entries.
  * - Non-destructive merge preserving every logged checkmark, actual minutes, and score.
@@ -1044,11 +1044,11 @@ async function scanIndexedDB() {
 
   // Candidate DB names across past and present FocusOS and Study Planner builds
   const candidateDBs = [
-    "FocusOS_PWA_DB",
+    "TYMVERA_PWA_DB",
     "FocusOS_DB",
-    "FocusOS",
+    "TYMVERA",
     "focusos_db",
-    "focusos",
+    "TYMVERA",
     "app_data",
     "keyval-store",
     "localforage",
@@ -1265,7 +1265,7 @@ async function performDeepScanAndRecover({ currentHistory = {}, currentPresets =
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem('fo6_history', JSON.stringify(mergedHistory));
-        window.localStorage.setItem('focusos_history_master_backup', JSON.stringify(mergedHistory));
+        window.localStorage.setItem('tymvera_history_master_backup', JSON.stringify(mergedHistory));
         window.localStorage.setItem('fo6_presets', JSON.stringify(mergedPresets));
       }
     } catch (e) {}
@@ -1318,7 +1318,7 @@ async function getRawStorageDiagnosticReport() {
  */
 function exportBackupData({ history, presets, alarms, notificationConfig }) {
   const payload = {
-    app: "FocusOS",
+    app: "TYMVERA",
     version: "6.0-pro",
     exportedAt: new Date().toISOString(),
     history: history || {},
@@ -1433,7 +1433,7 @@ class ErrorBoundary extends React.Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, errorInfo) {
-    console.error("FocusOS Crash Intercepted:", error, errorInfo);
+    console.error("TYMVERA Crash Intercepted:", error, errorInfo);
   }
   render() {
     if (this.state.hasError) {
@@ -1525,7 +1525,7 @@ class ErrorBoundary extends React.Component {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `focusos-emergency-backup-${Date.now()}.json`;
+                a.download = `tymvera-emergency-backup-${Date.now()}.json`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -1552,7 +1552,7 @@ class ErrorBoundary extends React.Component {
           <button
             onClick={() => {
               if (window.confirm("Wipe local database? Only do this after exporting backup.")) {
-                const req = indexedDB.deleteDatabase("FocusOS_PWA_DB");
+                const req = indexedDB.deleteDatabase("TYMVERA_PWA_DB");
                 req.onsuccess = () => window.location.reload();
                 req.onerror = () => {
                   alert("Failed to wipe data. Try manually clearing browser cache.");
@@ -1586,7 +1586,7 @@ class ErrorBoundary extends React.Component {
 }
 
 // ─── INDEXEDDB ENGINE (Local-First Offline Storage) ───────────────────────────
-const DB_NAME = "FocusOS_PWA_DB";
+const DB_NAME = "TYMVERA_PWA_DB";
 const DB_VERSION = 1;
 const STORE_NAME = "app_data";
 
@@ -1702,7 +1702,7 @@ const usePWA = () => {
           }
         })
         .catch((err) => {
-          console.warn("[FocusOS] Service worker registration note:", err);
+          console.warn("[TYMVERA] Service worker registration note:", err);
         });
     }
 
@@ -2209,7 +2209,7 @@ const TaskItem = ({
 };
 
 // ─── MAIN APP COMPONENT (FocusOS) ─────────────────────────────────────────────
-function FocusOS() {
+function TYMVERA() {
   const [isReady, setIsReady] = useState(false);
   const [tab, setTab] = useState("today");
   const [selDate, setSelDate] = useState(todayStr());
@@ -2345,7 +2345,7 @@ function FocusOS() {
           try {
             const rawLs =
               localStorage.getItem("fo6_history") ||
-              localStorage.getItem("focusos_history_master_backup");
+              localStorage.getItem("tymvera_history_master_backup");
             if (rawLs) {
               const parsed = JSON.parse(rawLs);
               if (parsed && typeof parsed === "object" && Object.keys(parsed).length > 0) {
@@ -2564,7 +2564,7 @@ function FocusOS() {
     try {
       if (typeof window !== "undefined" && window.localStorage) {
         localStorage.setItem("fo6_history", JSON.stringify(history));
-        localStorage.setItem("focusos_history_master_backup", JSON.stringify(history));
+        localStorage.setItem("tymvera_history_master_backup", JSON.stringify(history));
         localStorage.setItem("fo6_presets", JSON.stringify(presets));
         localStorage.setItem("fo6_theme", themeMode);
         localStorage.setItem("fo6_alarms", JSON.stringify(alarms));
@@ -3294,7 +3294,7 @@ function FocusOS() {
     handleAddToast({
       id: `toast_export_${Date.now()}`,
       title: "Backup Exported",
-      body: `Downloaded complete FocusOS backup (${Object.keys(history).length} days).`,
+      body: `Downloaded complete TYMVERA backup (${Object.keys(history).length} days).`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
   };
@@ -3338,7 +3338,7 @@ function FocusOS() {
 
   const handleCopyRawBackup = () => {
     const payload = {
-      app: "FocusOS",
+      app: "TYMVERA",
       version: "6.0-pro",
       exportedAt: new Date().toISOString(),
       history,
@@ -3562,7 +3562,7 @@ function FocusOS() {
 
         <div className="text-center my-auto">
           <div className="text-sm uppercase tracking-[4px] font-mono font-bold text-gray-400 mb-2">
-            FocusOS Smart Alarm
+            TYMVERA Smart Alarm
           </div>
           <div className="text-6xl font-black tracking-tight mb-3">
             {to12h(activeAlarm.time)}
@@ -5082,7 +5082,7 @@ function FocusOS() {
               onClick={handleInstallClick}
               className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white font-black py-4 rounded-[24px] flex justify-center items-center gap-3 shadow-lg shadow-blue-500/30 active:scale-[0.98] transition-transform text-lg"
             >
-              <Icon name="download" size={24} /> Install FocusOS PWA
+              <Icon name="download" size={24} /> Install TYMVERA PWA
             </button>
           </div>
         )}
@@ -5736,9 +5736,9 @@ function FocusOS() {
           <button
             onClick={() => {
               if (window.confirm("Wipe all local records and restart?")) {
-                const req = indexedDB.deleteDatabase("FocusOS_PWA_DB");
+                const req = indexedDB.deleteDatabase("TYMVERA_PWA_DB");
                 localStorage.removeItem("fo6_history");
-                localStorage.removeItem("focusos_history_master_backup");
+                localStorage.removeItem("tymvera_history_master_backup");
                 req.onsuccess = () => window.location.reload();
               }
             }}
@@ -5766,7 +5766,7 @@ function FocusOS() {
       >
         <img
           src="icon.png"
-          alt="FocusOS"
+          alt="TYMVERA"
           style={{
             width: 90,
             height: 90,
@@ -5861,7 +5861,7 @@ function FocusOS() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <FocusOS />
+      <TYMVERA />
     </ErrorBoundary>
   );
 }

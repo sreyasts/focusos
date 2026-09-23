@@ -1,6 +1,6 @@
 /**
- * FocusOS Progressive Web App — Production Service Worker
- * Version: v24.0.0
+ * TYMVERA Progressive Web App — Production Service Worker
+ * Version: v25.0.0
  * Features:
  * - 100% Offline-First Architecture
  * - Pre-caching of core application shell, self-hosted Tailwind, and icon fonts
@@ -9,8 +9,8 @@
  * - Push & local notification click lifecycle handling
  */
 
-const CACHE_NAME = 'focusos-v24-core';
-const RUNTIME_CACHE = 'focusos-v24-runtime';
+const CACHE_NAME = 'tymvera-v25-core';
+const RUNTIME_CACHE = 'tymvera-v25-runtime';
 
 // Critical assets to precache on installation for guaranteed offline execution
 const PRECACHE_ASSETS = [
@@ -42,7 +42,7 @@ self.addEventListener('install', (event) => {
               await cache.put(url, response);
             }
           } catch (err) {
-            console.warn('[FocusOS SW] Precache warning for ' + url + ':', err);
+            console.warn('[TYMVERA SW] Precache warning for ' + url + ':', err);
           }
         })
       );
@@ -59,15 +59,15 @@ self.addEventListener('install', (event) => {
               const res = await fetch(assetUrl, { cache: 'no-cache' });
               if (res && res.ok) {
                 await cache.put(assetUrl, res);
-                console.log('[FocusOS SW] Precached dynamic asset bundle:', assetUrl);
+                console.log('[TYMVERA SW] Precached dynamic asset bundle:', assetUrl);
               }
             } catch (e) {
-              console.warn('[FocusOS SW] Failed to precache dynamic asset:', assetUrl, e);
+              console.warn('[TYMVERA SW] Failed to precache dynamic asset:', assetUrl, e);
             }
           }
         }
       } catch (err) {
-        console.warn('[FocusOS SW] Failed to scan /index.html for dynamic assets:', err);
+        console.warn('[TYMVERA SW] Failed to scan /index.html for dynamic assets:', err);
       }
     }).then(() => self.skipWaiting())
   );
@@ -80,7 +80,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME && key !== RUNTIME_CACHE) {
-            console.log('[FocusOS SW] Evicting legacy cache:', key);
+            console.log('[TYMVERA SW] Evicting legacy cache:', key);
             return caches.delete(key);
           }
         })
@@ -118,7 +118,7 @@ self.addEventListener('fetch', (event) => {
             return cachedResponse;
           }
           return new Response(
-            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>FocusOS Offline</title></head><body style="background:#080808;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h2>FocusOS Offline — Open once while connected to enable full offline support</h2></body></html>',
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>TYMVERA Offline</title></head><body style="background:#080808;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h2>TYMVERA Offline — Open once while connected to enable full offline support</h2></body></html>',
             { headers: { 'Content-Type': 'text/html' } }
           );
         })

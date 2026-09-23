@@ -1,4 +1,4 @@
-﻿User-agent: *
+User-agent: *
 Allow: /
 
-Sitemap: https://focusos-web.web.app/sitemap.xml
+Sitemap: https://tymvera.web.app/sitemap.xml

@@ -1,25 +1,24 @@
 {
-  "name": "focusos",
+  "name": "tymvera",
   "version": "2.0.0",
   "description": "Ultra-fast, distraction-free productivity OS & routine tracker with weighted priorities, multi-session analytics, and offline-first cloud sync.",
-  "homepage": "https://focusos-web.web.app",
+  "homepage": "https://tymvera.web.app",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sreyasts/focusos.git"
+    "url": "https://github.com/sreyasts/tymvera.git"
   },
   "bugs": {
-    "url": "https://github.com/sreyasts/focusos/issues"
+    "url": "https://github.com/sreyasts/tymvera/issues"
   },
   "keywords": [
     "productivity",
-    "focusos",
+    "tymvera",
     "routine-tracker",
     "study-planner",
     "time-blocking",
     "pwa",
     "habit-tracker",
     "pomodoro",
-    "kerala-plustwo",
     "offline-first",
     "analytics"
   ],
