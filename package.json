@@ -1,9 +1,31 @@
 {
-  "name": "react",
-  "version": "1.0.0",
-  "description": "",
-  "keywords": [],
-  "main": "src/index.tsx",
+  "name": "focusos",
+  "version": "2.0.0",
+  "description": "Ultra-fast, distraction-free productivity OS & routine tracker with weighted priorities, multi-session analytics, and offline-first cloud sync.",
+  "homepage": "https://focusos-web.web.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sreyasts/focusos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sreyasts/focusos/issues"
+  },
+  "keywords": [
+    "productivity",
+    "focusos",
+    "routine-tracker",
+    "study-planner",
+    "time-blocking",
+    "pwa",
+    "habit-tracker",
+    "pomodoro",
+    "kerala-plustwo",
+    "offline-first",
+    "analytics"
+  ],
+  "author": "Sreyas T S",
+  "license": "MIT",
+  "main": "src/index.jsx",
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -14,6 +36,7 @@
     "@types/react-dom": "19.0.0",
     "@vitejs/plugin-react": "^6.1.1",
     "loader-utils": "3.2.1",
+    "puppeteer-core": "^25.11.0",
     "typescript": "5.7.2",
     "vite": "^8.3.0"
   },
