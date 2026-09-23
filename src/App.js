@@ -5610,72 +5610,10 @@ function TYMVERA() {
           ))}
         </div>
 
-        {/* Data Recovery & Universal Storage Vault */}
+        {/* Backup & Data Transfer */}
         <div className={`text-[11px] font-mono tracking-[2px] font-bold uppercase ${themeColors.text3} mb-3 ml-2 flex items-center gap-1.5`}>
-          <Icon name="database" size={14} className="text-blue-500" /> Storage & Data Recovery
+          <Icon name="cloud_sync" size={14} className="text-blue-500" /> Backup & Portability
         </div>
-
-        {/* Status Card */}
-        <div className={`${themeColors.surface} border ${themeColors.border} rounded-3xl p-5 mb-4 shadow-sm`}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-xs font-black text-gray-900 dark:text-white flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              IndexedDB + LocalStorage Dual-Sync
-            </div>
-            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">
-              Active
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-center my-3">
-            <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#262626]">
-              <div className="text-lg font-black text-gray-900 dark:text-white">
-                {Object.keys(history).length}
-              </div>
-              <div className="text-[10px] font-bold text-gray-400">Days Logged</div>
-            </div>
-            <div className="p-3 rounded-2xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#262626]">
-              <div className="text-lg font-black text-gray-900 dark:text-white">
-                {presets.length}
-              </div>
-              <div className="text-[10px] font-bold text-gray-400">Active Routines</div>
-            </div>
-          </div>
-
-          {/* Deep Scan Button */}
-          <button
-            onClick={handleDeepScanStorage}
-            disabled={isScanningStorage}
-            className="w-full mt-2 py-3.5 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 active:scale-98 transition-all disabled:opacity-50"
-          >
-            <Icon name={isScanningStorage ? "sync" : "history"} size={18} className={isScanningStorage ? "animate-spin" : ""} />
-            {isScanningStorage ? "Deep Scanning Device Storage..." : "Deep Scan & Restore Local Storage"}
-          </button>
-          <p className="text-[10px] text-gray-400 text-center mt-2 leading-tight">
-            Exhaustively checks localStorage and all IndexedDB databases on this smartphone/browser to recover past days, streaks, and analytics.
-          </p>
-
-          {scanReport && (
-            <div className="mt-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs flex items-start gap-2 animate-in fade-in duration-300">
-              <Icon name="check_circle" size={16} className="mt-0.5 flex-shrink-0" />
-              <span className="leading-snug">{scanReport}</span>
-            </div>
-          )}
-
-          {/* Storage Inspector */}
-          <button
-            onClick={async () => {
-              const report = await getRawStorageDiagnosticReport();
-              setStorageReport(report);
-              setShowStorageInspector(true);
-            }}
-            className="w-full mt-1 py-2.5 px-4 rounded-2xl border border-dashed border-gray-300 dark:border-[#333] text-gray-500 dark:text-gray-400 font-bold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-all"
-          >
-            <Icon name="troubleshoot" size={16} />
-            Storage Inspector &amp; Force Restore
-          </button>
-        </div>
-
         {/* Backup & Transfer Tools */}
         <div className={`${themeColors.surface} border ${themeColors.border} rounded-3xl p-4 mb-8 shadow-sm flex flex-col gap-2`}>
           <div className="text-xs font-bold text-gray-400 px-2 pb-1">Backup & Portability</div>
