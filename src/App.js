@@ -1633,7 +1633,31 @@ const idbSet = async (key, val) => {
   }
 };
 
-// ─── PWA DYNAMIC INJECTOR ─────────────────────────────────────────────────────
+// ─── ONLINE STATUS HOOK ───────────────────────────────────────────────────────
+const useOnlineStatus = () => {
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" && typeof navigator.onLine === "boolean"
+      ? navigator.onLine
+      : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  return isOnline;
+};
+
+// ─── PWA & SERVICE WORKER HOOK ────────────────────────────────────────────────
 const usePWA = () => {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
 
@@ -1650,90 +1674,36 @@ const usePWA = () => {
     }
 
     const absoluteIconUrl = window.location.origin + "/icon.png";
-    const manifest = {
-      name: "FocusOS",
-      short_name: "FocusOS",
-      description: "Priority-weighted productivity tracker with Smart Alarms & Cloud Sync",
-      start_url: window.location.origin + "/",
-      display: "standalone",
-      background_color: "#080808",
-      theme_color: "#080808",
-      icons: [
-        {
-          src: absoluteIconUrl,
-          sizes: "512x512",
-          type: "image/png",
-          purpose: "any maskable",
-        },
-      ],
-    };
 
-    const manifestBlob = new Blob([JSON.stringify(manifest)], {
-      type: "application/manifest+json",
-    });
-    const manifestURL = URL.createObjectURL(manifestBlob);
-
+    // Maintain static /manifest.json link
     let link = document.querySelector('link[rel="manifest"]');
     if (!link) {
       link = document.createElement("link");
       link.rel = "manifest";
+      link.href = "/manifest.json";
       document.head.appendChild(link);
     }
-    link.href = manifestURL;
 
     let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
     if (!appleIcon) {
       appleIcon = document.createElement("link");
       appleIcon.rel = "apple-touch-icon";
+      appleIcon.href = absoluteIconUrl;
       document.head.appendChild(appleIcon);
     }
-    appleIcon.href = absoluteIconUrl;
 
+    // Register production Service Worker
     if ("serviceWorker" in navigator) {
-      const swCode = `
-        const CACHE_NAME = 'focusos-pwa-v23';
-        self.addEventListener('install', (e) => { 
-            e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(['/', '/index.html', '${absoluteIconUrl}', 'https://cdn.tailwindcss.com', 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0'])).catch(()=>{})); 
-            self.skipWaiting(); 
-        });
-        self.addEventListener('activate', (e) => {
-            e.waitUntil(caches.keys().then(keys => Promise.all(keys.map(k => k !== CACHE_NAME ? caches.delete(k) : null))));
-            self.clients.claim();
-        });
-        self.addEventListener('fetch', (e) => { 
-            e.respondWith(
-                caches.match(e.request).then((res) => {
-                    if (res) return res;
-                    return fetch(e.request).then(fetchRes => {
-                        if (e.request.method === 'GET' && fetchRes.status === 200) {
-                            const clone = fetchRes.clone();
-                            caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
-                        }
-                        return fetchRes;
-                    }).catch(() => new Response('Offline Mode Active'));
-                })
-            ); 
-        });
-        self.addEventListener('notificationclick', function(event) {
-          event.notification.close();
-          event.waitUntil(
-            clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-              if (clientList.length > 0) {
-                let client = clientList[0];
-                for (let i = 0; i < clientList.length; i++) {
-                  if (clientList[i].focused) { client = clientList[i]; }
-                }
-                return client.focus();
-              }
-              return clients.openWindow('/');
-            })
-          );
-        });
-      `;
-      const swBlob = new Blob([swCode], { type: "application/javascript" });
       navigator.serviceWorker
-        .register(URL.createObjectURL(swBlob))
-        .catch(() => {});
+        .register("/sw.js", { scope: "/" })
+        .then((reg) => {
+          if (reg) {
+            reg.update().catch(() => {});
+          }
+        })
+        .catch((err) => {
+          console.warn("[FocusOS] Service worker registration note:", err);
+        });
     }
 
     const handler = (e) => {
@@ -2337,6 +2307,7 @@ function FocusOS() {
   }, []);
 
   const { deferredPrompt, setDeferredPrompt } = usePWA();
+  const isOnline = useOnlineStatus();
 
   // ─── INITIAL BOOT & STORAGE LOADING ─────────────────────────────────────────
   useEffect(() => {
@@ -2564,6 +2535,10 @@ function FocusOS() {
 
     // 2. Continuous Cloud Synchronization whenever signed in with Google
     if (currentUser && currentUser.uid) {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        setCloudSyncStatus("offline");
+        return;
+      }
       setCloudSyncStatus("syncing");
       if (window.__syncTimeout) clearTimeout(window.__syncTimeout);
       window.__syncTimeout = setTimeout(async () => {
@@ -2594,6 +2569,34 @@ function FocusOS() {
     currentUser,
     isReady,
   ]);
+
+  // ─── AUTO-SYNC WHEN RECONNECTING ONLINE ──────────────────────────────────────
+  useEffect(() => {
+    if (isOnline && currentUser && currentUser.uid && hasCompletedInitialLoadRef.current) {
+      setCloudSyncStatus("syncing");
+      syncUserDataToCloud(currentUser.uid, {
+        history,
+        presets,
+        themeMode,
+        alarms,
+        notificationConfig,
+        chartViewMode,
+      })
+        .then(() => {
+          setCloudSyncStatus("synced");
+          setLastSyncedTime(new Date());
+          handleAddToast({
+            id: Date.now(),
+            title: "⚡ Back Online",
+            body: "Your offline changes were synced with Google Cloud.",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          });
+        })
+        .catch(() => {
+          setCloudSyncStatus("error");
+        });
+    }
+  }, [isOnline]);
 
   // ─── FLUSH CLOUD SYNC ON APP BACKGROUND / SCREEN LOCK ───────────────────────
   useEffect(() => {
@@ -3135,6 +3138,15 @@ function FocusOS() {
 
   // ─── AUTHENTICATION ACTIONS ─────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
+    if (!navigator.onLine) {
+      handleAddToast({
+        id: Date.now(),
+        title: "⚡ Offline Mode Active",
+        body: "Google Sign-In requires an active internet connection. All changes are being saved locally on this device.",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      });
+      return;
+    }
     try {
       setCloudSyncStatus("syncing");
       const user = await signInWithGoogle();
@@ -3142,7 +3154,12 @@ function FocusOS() {
       setCloudSyncStatus("synced");
     } catch (err) {
       console.error("Google Sign-In failed:", err);
-      alert("Sign In Error: " + (err.message || "Failed to authenticate with Google"));
+      handleAddToast({
+        id: Date.now(),
+        title: "Sign In Warning",
+        body: err.message || "Failed to authenticate with Google",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      });
       setCloudSyncStatus("error");
     }
   };
@@ -4354,8 +4371,17 @@ function FocusOS() {
             <Icon name="calendar_month" size={18} className={themeColors.text2} />
           </button>
 
-          {/* Google Auth Status Badge */}
-          {currentUser ? (
+          {/* Offline Indicator or Google Auth Status Badge */}
+          {!isOnline ? (
+            <div
+              onClick={() => setTab("settings")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-500 dark:text-amber-400 text-xs font-black shadow-sm cursor-pointer active:scale-95 transition-transform"
+              title="100% Offline Mode Active — All routines and progress saved locally"
+            >
+              <Icon name="cloud_off" size={15} />
+              <span>Offline Mode</span>
+            </div>
+          ) : currentUser ? (
             <div
               onClick={() => setTab("settings")}
               className="flex items-center gap-2 cursor-pointer bg-gray-100 dark:bg-[#1a1a1a] py-1 px-3 rounded-full border border-gray-200/60 dark:border-[#262626] active:scale-95 transition-transform"
@@ -5315,9 +5341,9 @@ function FocusOS() {
                     {currentUser.displayName || "Google User"}
                   </div>
                   <div className="text-xs text-gray-500 font-mono truncate">{currentUser.email}</div>
-                  <div className="flex items-center gap-1.5 mt-1 text-xs font-bold text-[#32D74B]">
-                    <Icon name="cloud_done" size={16} />
-                    <span>Cloud Backup Active</span>
+                  <div className={`flex items-center gap-1.5 mt-1 text-xs font-bold ${isOnline ? "text-[#32D74B]" : "text-amber-500"}`}>
+                    <Icon name={isOnline ? "cloud_done" : "cloud_off"} size={16} />
+                    <span>{isOnline ? "Cloud Backup Active" : "Offline Mode (Saved locally)"}</span>
                   </div>
                 </div>
               </div>
@@ -5325,16 +5351,34 @@ function FocusOS() {
               <div className="flex gap-2 pt-2 border-t border-gray-100 dark:border-[#222]">
                 <button
                   onClick={async () => {
+                    if (!navigator.onLine) {
+                      handleAddToast({
+                        id: Date.now(),
+                        title: "⚡ Offline Mode",
+                        body: "Cannot sync while offline. Your changes are safely stored in local Dual IndexedDB.",
+                        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                      });
+                      return;
+                    }
                     setCloudSyncStatus("syncing");
-                    await syncUserDataToCloud(currentUser.uid, {
-                      history,
-                      presets,
-                      themeMode,
-                      alarms,
-                      notificationConfig,
-                    });
-                    setCloudSyncStatus("synced");
-                    alert("All routines and timeline logs synced to Cloud Firestore!");
+                    try {
+                      await syncUserDataToCloud(currentUser.uid, {
+                        history,
+                        presets,
+                        themeMode,
+                        alarms,
+                        notificationConfig,
+                      });
+                      setCloudSyncStatus("synced");
+                      handleAddToast({
+                        id: Date.now(),
+                        title: "Cloud Sync Complete",
+                        body: "All routines and timeline logs synced to Cloud Firestore!",
+                        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                      });
+                    } catch (e) {
+                      setCloudSyncStatus("error");
+                    }
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 font-black text-xs transition-all"
                 >

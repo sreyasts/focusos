@@ -65,8 +65,34 @@
   }
   </script>
 
+  <!-- Material Symbols: Local Self-Hosted + CDN Fallback -->
+  <link rel="stylesheet" href="/vendor/material-symbols.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0" />
-  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Tailwind CSS: Local Self-Hosted + CDN Fallback -->
+  <script src="/vendor/tailwindcss.js"></script>
+  <script>
+    if (!window.tailwind) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.tailwindcss.com';
+      document.head.appendChild(s);
+    }
+  </script>
+
+  <!-- PWA Offline Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+          .then(function(reg) {
+            console.log('[FocusOS SW] Registered with scope:', reg.scope);
+          })
+          .catch(function(err) {
+            console.warn('[FocusOS SW] Registration note:', err);
+          });
+      });
+    }
+  </script>
 </head>
 <body class="bg-[#f8fafc] dark:bg-[#080808] text-gray-900 dark:text-white m-0 p-0 overflow-x-hidden select-none">
   <div id="root"></div>
