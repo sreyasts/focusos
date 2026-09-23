@@ -1,42 +1,7 @@
 {
   "hosting": [
     {
-      "target": "focusos-web",
-      "public": "dist",
-      "ignore": [
-        "firebase.json",
-        "**/.*",
-        "**/node_modules/**"
-      ],
-      "rewrites": [
-        {
-          "source": "**",
-          "destination": "/index.html"
-        }
-      ],
-      "headers": [
-        {
-          "source": "/sw.js",
-          "headers": [
-            {
-              "key": "Cache-Control",
-              "value": "no-cache, no-store, must-revalidate"
-            }
-          ]
-        },
-        {
-          "source": "**/*.@(js|css)",
-          "headers": [
-            {
-              "key": "Cache-Control",
-              "value": "max-age=31536000"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "target": "focusos-pwa",
+      "target": "tymvera",
       "public": "dist",
       "ignore": [
         "firebase.json",

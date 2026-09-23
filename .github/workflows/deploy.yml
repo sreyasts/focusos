@@ -1,4 +1,4 @@
-name: Deploy FocusOS to Firebase Hosting
+name: Deploy TYMVERA to Firebase Hosting
 
 on:
   push:

@@ -5,11 +5,8 @@
   "targets": {
     "mission-plustwo": {
       "hosting": {
-        "focusos-web": [
-          "focusos-web"
-        ],
-        "focusos-pwa": [
-          "focusos-pwa"
+        "tymvera": [
+          "tymvera"
         ]
       }
     }
