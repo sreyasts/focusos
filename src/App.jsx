@@ -592,7 +592,7 @@ const calcScore = (blocks, progress) => {
     } else if (p.status === "partial") {
       const d = mins(b.start, b.end);
       const ratio = d > 0 ? (p.actualMins || 0) / d : 0;
-      earned += w * Math.min(1, Math.max(0, ratio));
+      earned += w * Math.max(0, ratio);
     }
   });
   if (total === 0) return zeroXpCompleted > 0 ? 100 : 0;
@@ -645,6 +645,10 @@ const TaskItem = ({
   const isSwiping = useRef(false);
 
   const duration = mins(block.start, block.end);
+  const actualMins = prog?.actualMins || 0;
+  const isOvertime = status === "partial" && actualMins > duration;
+  const overtimeMins = isOvertime ? actualMins - duration : 0;
+  const sessionPct = duration > 0 ? Math.round((actualMins / duration) * 100) : 100;
   const [sh, sm] = (block.start || "00:00").split(":").map(Number);
   const [eh] = (block.end || "00:00").split(":").map(Number);
   const isCrossMidnight = eh < sh;
@@ -680,12 +684,21 @@ const TaskItem = ({
       </span>
     );
   } else if (status === "partial") {
-    badgeBorder = "border-[#FF9F0A]/40";
-    statusBadge = (
-      <span className="text-[10px] font-black uppercase tracking-wider bg-[#FF9F0A]/15 text-[#FF9F0A] px-2 py-0.5 rounded-full flex items-center gap-1">
-        <Icon name="timelapse" size={12} /> {prog?.actualMins || 0}m
-      </span>
-    );
+    if (isOvertime) {
+      badgeBorder = "border-emerald-500/60 shadow-lg shadow-emerald-500/15 ring-1 ring-emerald-500/30";
+      statusBadge = (
+        <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm shadow-emerald-500/20 animate-pulse">
+          <Icon name="bolt" size={12} /> {actualMins}m · {sessionPct}% (+{overtimeMins}m)
+        </span>
+      );
+    } else {
+      badgeBorder = "border-[#FF9F0A]/40";
+      statusBadge = (
+        <span className="text-[10px] font-black uppercase tracking-wider bg-[#FF9F0A]/15 text-[#FF9F0A] px-2 py-0.5 rounded-full flex items-center gap-1">
+          <Icon name="timelapse" size={12} /> {actualMins}m ({sessionPct}%)
+        </span>
+      );
+    }
   } else if (status === "missed") {
     badgeBorder = "border-[#FF3B30]/40";
     statusBadge = (
@@ -710,8 +723,14 @@ const TaskItem = ({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? "transform 0.2s" : "none" }}
-        className={`relative ${themeColors.surface} border ${
-          isCurrent ? "border-blue-500 shadow-md shadow-blue-500/10 ring-1 ring-blue-500/30" : badgeBorder !== "border-transparent" ? badgeBorder : themeColors.border
+        className={`relative ${themeColors.surface} ${
+          isOvertime ? "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-transparent" : ""
+        } border ${
+          isCurrent
+            ? "border-blue-500 shadow-md shadow-blue-500/10 ring-1 ring-blue-500/30"
+            : badgeBorder !== "border-transparent"
+            ? badgeBorder
+            : themeColors.border
         } rounded-3xl p-5 overflow-hidden transition-all`}
       >
         {/* Active live progress bar at top */}
@@ -730,6 +749,8 @@ const TaskItem = ({
               className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${
                 status === "completed"
                   ? "bg-[#32D74B]/15 text-[#32D74B]"
+                  : status === "partial" && isOvertime
+                  ? "bg-emerald-500/25 text-emerald-400 border border-emerald-500/40 shadow-md shadow-emerald-500/20"
                   : status === "partial"
                   ? "bg-[#FF9F0A]/15 text-[#FF9F0A]"
                   : isCurrent
@@ -737,7 +758,7 @@ const TaskItem = ({
                   : `${themeColors.surface2} ${themeColors.text2}`
               }`}
             >
-              <Icon name={block.icon || "monitoring"} size={22} />
+              <Icon name={isOvertime ? "bolt" : block.icon || "monitoring"} size={22} />
             </div>
 
             <div className="flex-1 min-w-0 pr-2">
@@ -822,6 +843,31 @@ const TaskItem = ({
           </div>
         </div>
 
+        {/* Partial & Overtime Visual Progress Bar */}
+        {status === "partial" && (
+          <div className="mt-3 pt-2.5 border-t border-gray-100/60 dark:border-[#222]">
+            <div className="flex justify-between items-center text-[10px] font-mono font-bold mb-1.5">
+              <span className={isOvertime ? "text-emerald-400 flex items-center gap-1 font-black" : "text-[#FF9F0A] flex items-center gap-1"}>
+                <Icon name={isOvertime ? "bolt" : "timelapse"} size={12} />
+                {isOvertime ? `Overtime +${overtimeMins}m (${sessionPct}%)` : `${sessionPct}% Logged`}
+              </span>
+              <span className="text-gray-400 font-medium">
+                {actualMins}m / {duration}m target
+              </span>
+            </div>
+            <div className="w-full bg-black/10 dark:bg-white/10 h-1.5 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 rounded-full ${
+                  isOvertime
+                    ? "bg-gradient-to-r from-emerald-500 to-[#32D74B] shadow-sm shadow-emerald-500/50"
+                    : "bg-[#FF9F0A]"
+                }`}
+                style={{ width: `${Math.min(100, sessionPct)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons Row */}
         <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-gray-100 dark:border-[#1e1e1e]">
           <button
@@ -838,12 +884,19 @@ const TaskItem = ({
           <button
             onClick={() => onOpenPartial(block)}
             className={`py-2 px-1 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 ${
-              status === "partial"
+              status === "partial" && isOvertime
+                ? "bg-gradient-to-r from-emerald-500 to-[#32D74B] text-black shadow-md shadow-emerald-500/25"
+                : status === "partial"
                 ? "bg-[#FF9F0A] text-black shadow-sm"
                 : "bg-gray-100 dark:bg-[#1a1a1a] text-gray-700 dark:text-gray-300 active:scale-95"
             }`}
           >
-            <Icon name="timer" size={14} /> Partial
+            <Icon name={isOvertime ? "bolt" : "timer"} size={14} />
+            {isOvertime
+              ? `Overtime (${actualMins}m)`
+              : status === "partial"
+              ? `Partial (${actualMins}m)`
+              : "Partial"}
           </button>
 
           <button
@@ -3058,8 +3111,8 @@ function FocusOS() {
                 cy={42}
                 r={36}
                 fill="none"
-                stroke={score >= 80 ? "#32D74B" : score >= 50 ? "#FF9F0A" : "#3b82f6"}
-                strokeWidth={7}
+                stroke={score > 100 ? "#10B981" : score >= 80 ? "#32D74B" : score >= 50 ? "#FF9F0A" : "#3b82f6"}
+                strokeWidth={score > 100 ? 8 : 7}
                 strokeDasharray={226.2}
                 strokeDashoffset={226.2 - (226.2 * Math.min(100, score)) / 100}
                 strokeLinecap="round"
@@ -3068,16 +3121,21 @@ function FocusOS() {
             </svg>
 
             <div className="flex-1">
-              <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-black tracking-tight text-gray-900 dark:text-white">
+              <div className="flex items-baseline gap-1.5 flex-wrap">
+                <span className={`text-4xl font-black tracking-tight ${score > 100 ? "text-emerald-500 dark:text-emerald-400" : "text-gray-900 dark:text-white"}`}>
                   {score}%
                 </span>
                 <span className="text-xs font-mono font-bold text-gray-400 uppercase tracking-wider">
                   Score
                 </span>
+                {score > 100 && (
+                  <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-0.5 animate-pulse">
+                    <Icon name="bolt" size={10} /> +{score - 100}% Overtime
+                  </span>
+                )}
               </div>
               <div className="text-xs font-bold text-gray-500 mt-1">
-                {done} of {selBlocks.length} completed {partial > 0 ? `(${partial} partial)` : ""}
+                {done} of {selBlocks.length} completed {partial > 0 ? `(${partial} logged)` : ""}
               </div>
               <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-[#222]">
                 <div className="flex items-center gap-1 text-xs font-mono font-bold text-amber-500">
