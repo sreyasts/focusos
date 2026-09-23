@@ -1,4 +1,4 @@
-﻿<p align="center">
+<p align="center">
   <img src="public/og-image.png" alt="FocusOS Header" width="100%" style="border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);" />
 </p>
 
@@ -50,7 +50,6 @@ You can use FocusOS right now in your browser with **zero account required**:
 | :--- | :--- | :--- |
 | 🌐 **Primary Web App** | [**focusos-web.web.app**](https://focusos-web.web.app) | Production web app on Google Firebase global CDN |
 | 📱 **Standalone PWA** | [**focusos-pwa.web.app**](https://focusos-pwa.web.app) | Dedicated progressive web app optimized for iOS & Android home screens |
-| ⚡ **Interactive CodeSandbox** | [**CodeSandbox Preview**](https://codesandbox.io/p/sandbox/46djtj) | Live single-file sandbox distribution |
 
 ---
 
@@ -172,7 +171,7 @@ focusos/
 │   │   ├── storageRecovery.js    # Universal dual-storage engine & deep recovery crawler
 │   │   └── firebaseAuth.js       # Firebase Auth & Firestore cloud sync
 │   ├── App.jsx              # Main FocusOS application
-│   ├── App.js               # Standalone self-contained bundle for CodeSandbox distribution
+│   ├── App.js               # Standalone self-contained single-file bundle distribution
 │   └── index.jsx            # React root mount
 └── vite.config.mjs          # Fast Vite bundler configuration
 ```

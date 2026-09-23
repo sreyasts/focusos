@@ -1,6 +1,6 @@
 /**
  * FocusOS - Kerala Plus Two & Priority Productivity OS
- * Consolidated Standalone Distribution for CodeSandbox & Production
+ * Consolidated Standalone Distribution for Production & Offline PWA
  * Fully Offline-First, Dual-Storage (IndexedDB + LocalStorage), Web Audio Synth Alarms,
  * Precision Notification Engine, Dual-Stepper Time Logging, and Interactive Scrubber Chart.
  */

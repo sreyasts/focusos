@@ -1,4 +1,4 @@
-﻿# Contributing to FocusOS
+# Contributing to FocusOS
 
 Thank you for your interest in contributing to **FocusOS**! We welcome contributions from developers, students, designers, and productivity enthusiasts worldwide.
 
@@ -41,8 +41,7 @@ FocusOS is designed with an **offline-first, zero-runtime-dependency** philosoph
 - **src/services/notificationEngine.js**: Web Notification & in-app toast scheduler.
 - **src/services/storageRecovery.js**: Dual IndexedDB + LocalStorage persistence & deep scanner.
 - **src/services/firebaseAuth.js**: Google Sign-In & Firestore cloud sync.
-- **src/App.js**: Standalone single-file bundle for CodeSandbox distribution (generated via 
-ode scratch/bundle_app.js).
+- **src/App.js**: Standalone self-contained single-file bundle distribution (generated via `node scratch/bundle_app.js`).
 
 ---
 
