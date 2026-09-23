@@ -1,6 +1,6 @@
 /**
  * TYMVERA Progressive Web App — Production Service Worker
- * Version: v25.0.0
+ * Version: v26.0.0
  * Features:
  * - 100% Offline-First Architecture
  * - Pre-caching of core application shell, self-hosted Tailwind, and icon fonts
@@ -9,8 +9,8 @@
  * - Push & local notification click lifecycle handling
  */
 
-const CACHE_NAME = 'tymvera-v25-core';
-const RUNTIME_CACHE = 'tymvera-v25-runtime';
+const CACHE_NAME = 'tymvera-v26-core';
+const RUNTIME_CACHE = 'tymvera-v26-runtime';
 
 // Critical assets to precache on installation for guaranteed offline execution
 const PRECACHE_ASSETS = [

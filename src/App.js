@@ -5083,7 +5083,7 @@ function TYMVERA() {
               onClick={handleInstallClick}
               className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white font-black py-4 rounded-[24px] flex justify-center items-center gap-3 shadow-lg shadow-blue-500/30 active:scale-[0.98] transition-transform text-lg"
             >
-              <Icon name="download" size={24} /> Install TYMVERA PWA
+              <Icon name="download" size={24} /> Install TYMVERA
             </button>
           </div>
         )}
