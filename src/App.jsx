@@ -454,7 +454,40 @@ const ICONS = [
   "theater_comedy",
 ];
 
-const WEIGHTS = { highest: 4, medium: 3, lower: 2, lowest: 1 };
+const PRIORITIES = [
+  { id: "high", label: "High Priority", short: "HIGH", weight: 4, color: "#FF3B30", bg: "rgba(255, 59, 48, 0.15)", border: "border-red-500/40" },
+  { id: "medium", label: "Medium Priority", short: "MED", weight: 3, color: "#0A84FF", bg: "rgba(10, 132, 255, 0.15)", border: "border-blue-500/40" },
+  { id: "low", label: "Low Priority", short: "LOW", weight: 2, color: "#FF9F0A", bg: "rgba(255, 159, 10, 0.15)", border: "border-amber-500/40" },
+  { id: "lowest", label: "Lowest Priority", short: "MIN", weight: 1, color: "#8E8E93", bg: "rgba(142, 142, 147, 0.15)", border: "border-gray-500/40" },
+];
+
+const WEIGHTS = {
+  high: 4,
+  highest: 4,
+  medium: 3,
+  low: 2,
+  lower: 2,
+  lowest: 1,
+};
+
+const pColor = (priority) => {
+  const p = String(priority || "").toLowerCase();
+  if (p === "high" || p === "highest") return "#FF3B30";
+  if (p === "medium") return "#0A84FF";
+  if (p === "low" || p === "lower") return "#FF9F0A";
+  if (p === "lowest") return "#8E8E93";
+  return "#0A84FF";
+};
+
+const pBadge = (priority) => {
+  const p = String(priority || "").toLowerCase();
+  if (p === "high" || p === "highest") return { text: "HIGH", color: "#FF3B30", bg: "bg-red-500/15 text-red-500 border-red-500/30" };
+  if (p === "medium") return { text: "MED", color: "#0A84FF", bg: "bg-blue-500/15 text-blue-500 border-blue-500/30" };
+  if (p === "low" || p === "lower") return { text: "LOW", color: "#FF9F0A", bg: "bg-amber-500/15 text-amber-500 border-amber-500/30" };
+  if (p === "lowest") return { text: "MIN", color: "#8E8E93", bg: "bg-gray-500/15 text-gray-400 border-gray-500/30" };
+  return { text: "MED", color: "#0A84FF", bg: "bg-blue-500/15 text-blue-500 border-blue-500/30" };
+};
+
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
 const DEFAULT_PRESETS = [
@@ -541,12 +574,17 @@ const mins = (s, e) => {
 const calcScore = (blocks, progress) => {
   if (!blocks || !Array.isArray(blocks) || !blocks.length) return 0;
   let earned = 0,
-    total = 0;
+    total = 0,
+    zeroXpCompleted = 0;
   blocks.forEach((b) => {
-    if (!b || b.zeroXp) return;
-    const w = WEIGHTS[b.priority] || 1;
-    total += w;
+    if (!b) return;
     const p = (progress || {})[b.id];
+    if (b.zeroXp) {
+      if (p && p.status === "completed") zeroXpCompleted++;
+      return;
+    }
+    const w = WEIGHTS[b.priority] || 2;
+    total += w;
     if (!p || p.status === "pending" || p.status === "missed") return;
 
     if (p.status === "completed") {
@@ -554,10 +592,11 @@ const calcScore = (blocks, progress) => {
     } else if (p.status === "partial") {
       const d = mins(b.start, b.end);
       const ratio = d > 0 ? (p.actualMins || 0) / d : 0;
-      earned += w * ratio;
+      earned += w * Math.min(1, Math.max(0, ratio));
     }
   });
-  return total > 0 ? Math.round((earned / total) * 100) : 0;
+  if (total === 0) return zeroXpCompleted > 0 ? 100 : 0;
+  return Math.round((earned / total) * 100);
 };
 
 const useLongPress = (callback = () => {}, ms = 500) => {
@@ -598,6 +637,7 @@ const TaskItem = ({
   onOpenPartial,
   onEdit,
   onDeleteFromToday,
+  onDuplicate,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [offset, setOffset] = useState(0);
@@ -701,13 +741,23 @@ const TaskItem = ({
             </div>
 
             <div className="flex-1 min-w-0 pr-2">
-              <div className="flex items-center gap-2 mb-0.5">
+              <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                 <span className="font-black text-base truncate text-gray-900 dark:text-white">
                   {block.name}
                 </span>
+                {/* Priority Badge */}
+                {block.priority && !block.zeroXp && (
+                  <span
+                    className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${pBadge(block.priority).bg}`}
+                  >
+                    {pBadge(block.priority).text}
+                  </span>
+                )}
+                {/* Status Badge */}
                 {statusBadge}
+                {/* 0XP Badge */}
                 {block.zeroXp && (
-                  <span className="text-[9px] uppercase tracking-wider bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded font-black">
+                  <span className="text-[9px] uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-black flex items-center gap-0.5">
                     0XP
                   </span>
                 )}
@@ -748,6 +798,15 @@ const TaskItem = ({
                   className="w-full px-4 py-2.5 text-left text-xs font-bold flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#222]"
                 >
                   <Icon name="edit" size={16} /> Edit Routine
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (onDuplicate) onDuplicate(block);
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-bold flex items-center gap-2.5 hover:bg-gray-100 dark:hover:bg-[#222]"
+                >
+                  <Icon name="content_copy" size={16} className="text-blue-500" /> Duplicate Routine
                 </button>
                 <button
                   onClick={() => {
@@ -844,6 +903,7 @@ function FocusOS() {
   const [currentUser, setCurrentUser] = useState(null);
   const [cloudSyncStatus, setCloudSyncStatus] = useState("idle");
   const [showFirebaseModal, setShowFirebaseModal] = useState(false);
+  const [showAddTaskGraphModal, setShowAddTaskGraphModal] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState(null);
 
   // Storage Inspector State
@@ -1296,6 +1356,40 @@ function FocusOS() {
     else if (setterFallback) setterFallback(null);
   };
 
+  const handleDuplicateRoutine = (blockOrPreset) => {
+    if (!blockOrPreset) return;
+    const baseName = blockOrPreset.name || "Routine";
+    let [sh, sm] = (blockOrPreset.start || "08:00").split(":").map(Number);
+    let [eh, em] = (blockOrPreset.end || "10:00").split(":").map(Number);
+    const duration = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
+    
+    // Shift forward by +4 hours for afternoon/evening session
+    let newSh = (sh + 4) % 24;
+    let newEh = (newSh + Math.max(1, Math.round((duration > 0 ? duration : 60) / 60))) % 24;
+    const pad = (n) => String(n).padStart(2, "0");
+    const newStart = `${pad(newSh)}:${pad(sm || 0)}`;
+    const newEnd = `${pad(newEh)}:${pad(em || 0)}`;
+
+    const duplicated = {
+      id: `p_${Date.now()}`,
+      name: baseName,
+      start: newStart,
+      end: newEnd,
+      priority: blockOrPreset.priority || "medium",
+      days: Array.isArray(blockOrPreset.days) ? [...blockOrPreset.days] : [0, 1, 2, 3, 4, 5, 6],
+      icon: normalizeIconName(blockOrPreset.icon),
+      zeroXp: !!blockOrPreset.zeroXp,
+    };
+
+    openEditingPreset(duplicated);
+    handleAddToast({
+      id: `toast_dup_${Date.now()}`,
+      title: "Routine Duplicated",
+      body: `Copied "${baseName}". Adjust times & tap Checkmark to save.`,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    });
+  };
+
   const openEditingPreset = (p) => {
     setEditingPreset(p);
     pushHash("#edit");
@@ -1409,28 +1503,70 @@ function FocusOS() {
     if (slice.length === 0) return [];
     return slice.map((log) => {
       let val = log.dailyScore || 0;
+      const sessions = [];
+
       if (filterTask !== "ALL") {
         val = 0;
-        Object.entries(log.blocks || {}).forEach(([bid, p]) => {
-          if (!p) return;
-          if (
-            String(p.name || "")
-              .toLowerCase()
-              .includes(String(filterTask || "").toLowerCase())
-          ) {
-            let dur = p.actualMins || 0;
-            if (p.status === "completed") {
-              const snap = (log.blocksList || []).find((x) => x && x.id === bid);
-              if (snap) dur = mins(snap.start, snap.end);
-              else dur = 60;
+        const normFilter = String(filterTask || "").toLowerCase();
+        
+        // Check blocksList or fallback to presets
+        const dayBlocks = log.blocksList && log.blocksList.length > 0 ? log.blocksList : presets;
+        
+        dayBlocks.forEach((b) => {
+          if (!b || !b.name) return;
+          const normName = String(b.name).toLowerCase();
+          if (normName.includes(normFilter) || normFilter.includes(normName)) {
+            const p = (log.blocks || {})[b.id];
+            const status = p ? p.status : "pending";
+            let dur = p?.actualMins || 0;
+            if (status === "completed") {
+              dur = mins(b.start, b.end);
             }
-            val += dur / 60;
+            const durHours = dur > 0 ? dur / 60 : 0;
+            val += durHours;
+            sessions.push({
+              id: b.id,
+              name: b.name,
+              start: b.start,
+              end: b.end,
+              status,
+              durHours,
+              durMins: dur,
+              zeroXp: !!b.zeroXp,
+            });
+          }
+        });
+
+        // Also check any ad-hoc blocks recorded in log.blocks with matching name
+        Object.entries(log.blocks || {}).forEach(([bid, p]) => {
+          if (!p || !p.name) return;
+          const already = sessions.some(s => s.id === bid || s.name === p.name);
+          if (!already) {
+            const normName = String(p.name).toLowerCase();
+            if (normName.includes(normFilter) || normFilter.includes(normName)) {
+              let dur = p.actualMins || 0;
+              const durHours = dur / 60;
+              val += durHours;
+              sessions.push({
+                id: bid,
+                name: p.name,
+                status: p.status || "pending",
+                durHours,
+                durMins: dur,
+                zeroXp: !!p.zeroXp,
+              });
+            }
           }
         });
       }
-      return { date: log.date, val: isNaN(val) ? 0 : val };
+
+      return {
+        date: log.date,
+        val: isNaN(val) ? 0 : val,
+        sessions,
+      };
     });
-  }, [allLogs, tf, filterTask]);
+  }, [allLogs, tf, filterTask, presets]);
 
   const sortedPresets = useMemo(() => {
     return Array.isArray(presets)
@@ -2448,6 +2584,83 @@ function FocusOS() {
             </div>
           </div>
 
+          {/* Priority Level Selector */}
+          <div className="mb-8">
+            <div className="flex justify-between items-center mb-3 ml-2">
+              <label className="text-[10px] uppercase tracking-[2px] text-gray-500 font-mono font-bold">
+                Priority Level
+              </label>
+              <span className="text-[10px] font-bold font-mono text-gray-400">
+                Weight: {WEIGHTS[editingPreset.priority || "medium"]}x Score Impact
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {PRIORITIES.map((pr) => {
+                const isSel = (editingPreset.priority || "medium").toLowerCase() === pr.id;
+                return (
+                  <button
+                    key={pr.id}
+                    type="button"
+                    onClick={() => setEditingPreset({ ...editingPreset, priority: pr.id })}
+                    className={`p-3 rounded-2xl border text-left transition-all flex flex-col gap-1 ${
+                      isSel
+                        ? "shadow-sm scale-102 ring-1"
+                        : "border-gray-200 dark:border-[#262626] bg-white dark:bg-[#151515] opacity-75"
+                    }`}
+                    style={{
+                      borderColor: isSel ? pr.color : undefined,
+                      backgroundColor: isSel ? pr.bg : undefined,
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black" style={{ color: pr.color }}>
+                        {pr.short}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold" style={{ color: pr.color }}>
+                        {pr.weight}x
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-bold text-gray-800 dark:text-gray-200 leading-tight">
+                      {pr.label.split(" ")[0]}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Skip Adding XP Toggle */}
+          <div className="mb-8 bg-white dark:bg-[#151515] p-5 rounded-[28px] border border-gray-200 dark:border-[#222] shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-2">
+                  <span>Skip Adding XP</span>
+                  {editingPreset.zeroXp && (
+                    <span className="text-[9px] uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-black">
+                      0XP Active
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 leading-snug max-w-[260px]">
+                  Useful for school, eating, travel, or sleep. Tracks your schedule without affecting productivity XP or score.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPreset({ ...editingPreset, zeroXp: !editingPreset.zeroXp })}
+                className={`w-14 h-8 rounded-full transition-colors relative shadow-inner flex-shrink-0 ${
+                  editingPreset.zeroXp ? "bg-purple-600" : "bg-gray-200 dark:bg-[#333]"
+                }`}
+              >
+                <div
+                  className={`w-6 h-6 bg-white rounded-full absolute top-1 shadow-md transition-transform ${
+                    editingPreset.zeroXp ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
           <div className="mb-8">
             <label className="text-[10px] uppercase tracking-[2px] text-gray-500 font-mono font-bold ml-2 mb-3 block">
               Active Days
@@ -2471,23 +2684,119 @@ function FocusOS() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5">
             <button
               type="button"
               onClick={() => savePreset(editingPreset)}
-              className="w-full py-4 rounded-2xl bg-blue-500 text-white font-black text-lg active:scale-95 transition-transform shadow-lg shadow-blue-500/30"
+              className="w-full py-4 rounded-2xl bg-blue-500 text-white font-black text-base active:scale-98 transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2"
             >
-              Save Routine
+              <Icon name="check" size={20} /> Save Routine
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDuplicateRoutine(editingPreset)}
+              className="w-full py-3.5 rounded-2xl border border-gray-200 dark:border-[#2a2a2a] text-xs font-black text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f1f1f] active:scale-98 transition-all flex items-center justify-center gap-2"
+            >
+              <Icon name="content_copy" size={16} className="text-blue-500" /> Duplicate Routine (e.g. Evening Session)
             </button>
             {!isUnsavedNew && (
               <button
                 type="button"
                 onClick={() => deletePreset(editingPreset.id)}
-                className="w-full py-3 text-sm font-bold text-[#FF3B30] hover:underline"
+                className="w-full py-2.5 text-xs font-bold text-[#FF3B30] hover:underline flex items-center justify-center gap-1.5"
               >
-                Delete Routine Completely
+                <Icon name="delete" size={14} /> Delete Routine Completely
               </button>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── RENDER: ADD TASK GRAPH MODAL ──────────────────────────────────────────
+  const renderAddTaskGraphModal = () => {
+    if (!showAddTaskGraphModal) return null;
+
+    return (
+      <div
+        className="fixed inset-0 bg-black/80 z-[3000] flex flex-col justify-end p-3 animate-in fade-in backdrop-blur-sm"
+        onClick={() => setShowAddTaskGraphModal(false)}
+      >
+        <div
+          className={`${themeColors.surface} rounded-[36px] p-6 w-full max-w-[420px] mx-auto border ${themeColors.border} shadow-2xl animate-in slide-in-from-bottom duration-200`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h3 className="font-black text-lg text-gray-900 dark:text-white flex items-center gap-2">
+                <Icon name="add_chart" size={20} className="text-blue-500" />
+                Add Task Graph
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Select any routine to plot its sessions and period milestones.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAddTaskGraphModal(false)}
+              className="p-1 rounded-full text-gray-400 hover:text-white"
+            >
+              <Icon name="close" size={20} />
+            </button>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto space-y-2 py-2">
+            <button
+              onClick={() => {
+                setFilterTask("ALL");
+                setShowAddTaskGraphModal(false);
+              }}
+              className={`w-full p-4 rounded-2xl text-left font-black text-sm flex items-center justify-between border transition-all ${
+                filterTask === "ALL"
+                  ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                  : "border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#161616] text-gray-800 dark:text-gray-200"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Icon name="monitoring" size={20} className="text-blue-500" />
+                <span>Overall Productivity Score</span>
+              </div>
+              <span className="text-xs font-mono text-gray-400">Score (%)</span>
+            </button>
+
+            {uniqueTaskNames.map((tName) => {
+              const isSel = filterTask === tName;
+              const matchingPresets = presets.filter((p) => p && p.name === tName);
+              const sessionCount = matchingPresets.length;
+
+              return (
+                <button
+                  key={tName}
+                  onClick={() => {
+                    setFilterTask(tName);
+                    setShowAddTaskGraphModal(false);
+                  }}
+                  className={`w-full p-4 rounded-2xl text-left font-black text-sm flex items-center justify-between border transition-all ${
+                    isSel
+                      ? "border-blue-500 bg-blue-500/10 text-blue-500"
+                      : "border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#161616] text-gray-800 dark:text-gray-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon name={matchingPresets[0]?.icon || "schedule"} size={20} className="text-blue-500" />
+                    <div>
+                      <div>{tName}</div>
+                      {sessionCount > 1 && (
+                        <div className="text-[10px] font-mono text-blue-500 font-bold">
+                          {sessionCount} sessions scheduled (Morning/Evening)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono text-gray-400">Hours (h)</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -2783,6 +3092,7 @@ function FocusOS() {
                   onOpenPartial={openPartialModal}
                   onEdit={openEditingPreset}
                   onDeleteFromToday={removeTaskFromToday}
+                  onDuplicate={handleDuplicateRoutine}
                 />
               );
             })
@@ -2814,9 +3124,28 @@ function FocusOS() {
   // ─── TAB 2: ANALYTICS & INTERACTIVE GRAPH ───────────────────────────────────
   const renderProgressTab = () => {
     const maxValReal = chartData.reduce((m, d) => Math.max(m, d.val), 0);
-    const maxValChart = filterTask === "ALL" ? Math.max(100, maxValReal * 1.1) : Math.max(8, maxValReal * 1.15);
+    const maxValChart = filterTask === "ALL" ? Math.max(100, maxValReal * 1.1) : Math.max(6, maxValReal * 1.2);
     const avgVal = chartData.length > 0 ? chartData.reduce((s, d) => s + d.val, 0) / chartData.length : 0;
     const totalVal = chartData.reduce((s, d) => s + d.val, 0);
+
+    // ─── PERIOD MILESTONE CALCULATIONS ──────────────────────────────────────
+    const isOverall = filterTask === "ALL";
+    const dailyTarget = isOverall ? 80 : 2.0; // 80% daily milestone for score, or 2.0h/day for task
+    const periodTarget = dailyTarget * tf;
+    const milestonePercent = Math.min(100, Math.round((totalVal / periodTarget) * 100));
+    const daysAchieved = chartData.filter((d) => d.val >= dailyTarget).length;
+
+    // Milestone Tier Badge
+    let milestoneBadge = { tier: "Momentum", icon: "rocket_launch", color: "#3b82f6" };
+    if (milestonePercent >= 100) {
+      milestoneBadge = { tier: "Diamond Milestone (100% Target Met!)", icon: "diamond", color: "#BF5AF2" };
+    } else if (milestonePercent >= 75) {
+      milestoneBadge = { tier: "Gold Milestone (75% Achieved)", icon: "workspace_premium", color: "#32D74B" };
+    } else if (milestonePercent >= 50) {
+      milestoneBadge = { tier: "Silver Milestone (50% Achieved)", icon: "military_tech", color: "#0A84FF" };
+    } else if (milestonePercent >= 25) {
+      milestoneBadge = { tier: "Bronze Milestone (25% Achieved)", icon: "shield", color: "#FF9F0A" };
+    }
 
     const width = 340;
     const height = 180;
@@ -2849,7 +3178,6 @@ function FocusOS() {
       }
     }
 
-    // Scrubber Pointer Move Handler
     const handleScrub = (clientX, rect) => {
       if (points.length === 0) return;
       const relX = ((clientX - rect.left) / rect.width) * width;
@@ -2868,7 +3196,7 @@ function FocusOS() {
     return (
       <div className="pb-32 select-none animate-in fade-in duration-500">
         <div className="px-4 pt-8 mb-6">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex justify-between items-center mb-5">
             <h1 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">
               Analytics
             </h1>
@@ -2900,26 +3228,62 @@ function FocusOS() {
             </div>
           </div>
 
+          {/* ─── GRAPH SELECTOR PILLS STRIP & ADD TASK GRAPH ────────────────── */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-3 mb-4 no-scrollbar">
+            <button
+              onClick={() => setFilterTask("ALL")}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-black whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                filterTask === "ALL"
+                  ? "bg-blue-500 text-white shadow-md shadow-blue-500/25"
+                  : "bg-gray-100 dark:bg-[#1a1a1a] text-gray-600 dark:text-gray-300 border border-gray-200/50 dark:border-[#262626]"
+              }`}
+            >
+              <Icon name="monitoring" size={14} /> Overall Score
+            </button>
+
+            {dynamicFilterOptions
+              .filter((opt) => opt !== "ALL")
+              .map((opt) => {
+                const isSel = filterTask === opt;
+                return (
+                  <button
+                    key={opt}
+                    onClick={() => setFilterTask(opt)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-black whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                      isSel
+                        ? "bg-blue-500 text-white shadow-md shadow-blue-500/25"
+                        : "bg-gray-100 dark:bg-[#1a1a1a] text-gray-600 dark:text-gray-300 border border-gray-200/50 dark:border-[#262626]"
+                    }`}
+                  >
+                    <Icon name="schedule" size={14} /> {opt}
+                  </button>
+                );
+              })}
+
+            <button
+              onClick={() => setShowAddTaskGraphModal(true)}
+              className="px-3.5 py-1.5 rounded-full text-xs font-black whitespace-nowrap transition-all border border-dashed border-blue-500/50 text-blue-500 hover:bg-blue-500/10 flex items-center gap-1"
+            >
+              <Icon name="add" size={14} /> Add Task Graph
+            </button>
+          </div>
+
           <div
             className={`${themeColors.surface} border ${themeColors.border} rounded-[32px] p-6 mb-6 shadow-sm`}
           >
-            <div className="flex justify-between items-center mb-6">
-              <select
-                value={filterTask}
-                onChange={(e) => setFilterTask(e.target.value)}
-                className="bg-transparent outline-none font-black text-lg appearance-none text-black dark:text-white max-w-[150px] truncate cursor-pointer"
-              >
-                {dynamicFilterOptions.map((opt) => (
-                  <option
-                    key={opt}
-                    value={opt}
-                    className="bg-white dark:bg-[#151515] text-black dark:text-white font-sans"
-                  >
-                    {opt === "ALL" ? "Overall Score" : `${opt} (Hrs)`}
-                  </option>
-                ))}
-              </select>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <span className="font-black text-xl text-gray-900 dark:text-white flex items-center gap-2">
+                  {isOverall ? "Overall Performance" : `${filterTask} Sessions`}
+                </span>
+                <span className="text-[11px] font-bold text-gray-400 block mt-0.5">
+                  {isOverall
+                    ? `Productivity score weighted by priority (${tf} Day Period)`
+                    : `Multi-session tracked time (${tf} Day Period)`}
+                </span>
+              </div>
 
+              {/* Timeframe selector */}
               <div className="flex bg-gray-100 dark:bg-[#222] p-1.5 rounded-2xl text-xs font-bold">
                 {[7, 14, 30, 90].map((v) => (
                   <button
@@ -2940,7 +3304,7 @@ function FocusOS() {
             {/* Interactive SVG Chart Container */}
             {chartData.length < 2 ? (
               <div className={`h-44 flex items-center justify-center ${themeColors.text3} text-sm font-medium`}>
-                Complete tasks over 2 or more days to populate interactive graphs.
+                Complete routines over 2 or more days to populate interactive graphs.
               </div>
             ) : (
               <div
@@ -2964,19 +3328,28 @@ function FocusOS() {
                     </linearGradient>
                   </defs>
 
-                  {/* Target 80% line */}
-                  {filterTask === "ALL" && (
-                    <line
-                      x1="0"
-                      y1={height - (80 / maxValChart) * height}
-                      x2={width}
-                      y2={height - (80 / maxValChart) * height}
-                      stroke="#32D74B"
-                      strokeWidth="1"
-                      strokeDasharray="4 4"
-                      opacity="0.5"
-                    />
-                  )}
+                  {/* Period Milestone Target Line */}
+                  <line
+                    x1="0"
+                    y1={height - (dailyTarget / maxValChart) * height}
+                    x2={width}
+                    y2={height - (dailyTarget / maxValChart) * height}
+                    stroke="#32D74B"
+                    strokeWidth="1.5"
+                    strokeDasharray="4 4"
+                    opacity="0.6"
+                  />
+                  <text
+                    x={width - 4}
+                    y={Math.max(12, height - (dailyTarget / maxValChart) * height - 4)}
+                    textAnchor="end"
+                    fill="#32D74B"
+                    fontSize="9"
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                  >
+                    {isOverall ? "Target: 80%" : `Target: ${dailyTarget.toFixed(1)}h/d`}
+                  </text>
 
                   {/* LINE CHART MODE */}
                   {chartViewMode === "line" && (
@@ -2999,7 +3372,7 @@ function FocusOS() {
                               cy={p.y}
                               r={isScrubbed ? "6.5" : "4"}
                               fill={isDark ? "#111" : "#fff"}
-                              stroke="#0A84FF"
+                              stroke={p.val >= dailyTarget ? "#32D74B" : "#0A84FF"}
                               strokeWidth={isScrubbed ? "4" : "2.5"}
                               className="transition-all duration-150"
                             />
@@ -3026,7 +3399,7 @@ function FocusOS() {
                             height={bHeight}
                             rx={bWidth / 3}
                             ry={bWidth / 3}
-                            fill={isScrubbed ? "#32D74B" : "url(#barGrad)"}
+                            fill={isScrubbed ? "#32D74B" : p.val >= dailyTarget ? "#0A84FF" : "url(#barGrad)"}
                             opacity={isScrubbed ? 1 : 0.85}
                             className="transition-all duration-150"
                           />
@@ -3049,30 +3422,53 @@ function FocusOS() {
                   )}
                 </svg>
 
-                {/* Interactive Tooltip Card Floating Above Scrubber */}
+                {/* Multi-Session Interactive Tooltip Card Floating Above Scrubber */}
                 {scrubberPoint && (
                   <div
-                    className="absolute pointer-events-none -top-12 z-20 transition-all duration-100 ease-out"
+                    className="absolute pointer-events-none -top-16 z-20 transition-all duration-100 ease-out"
                     style={{
-                      left: `${(scrubberPoint.x / width) * 100}%`,
+                      left: `${Math.max(25, Math.min(75, (scrubberPoint.x / width) * 100))}%`,
                       transform: "translateX(-50%)",
                     }}
                   >
                     <div
-                      className={`${themeColors.surface} border border-blue-500/50 rounded-2xl px-3 py-1.5 shadow-2xl backdrop-blur-lg flex items-center gap-2 whitespace-nowrap`}
+                      className={`${themeColors.surface} border border-blue-500/50 rounded-2xl p-2.5 shadow-2xl backdrop-blur-lg flex flex-col gap-1 min-w-[160px] whitespace-nowrap`}
                     >
-                      <span className="text-[10px] font-mono font-bold text-gray-400">
-                        {new Date(scrubberPoint.date + "T12:00:00").toLocaleDateString("en", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
-                      <span className="text-xs font-black text-blue-500">
-                        {filterTask === "ALL"
-                          ? `${Math.round(scrubberPoint.val)}%`
-                          : `${scrubberPoint.val.toFixed(1)} hrs`}
-                      </span>
+                      <div className="flex justify-between items-center text-[10px] font-mono text-gray-400">
+                        <span>
+                          {new Date(scrubberPoint.date + "T12:00:00").toLocaleDateString("en", {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                        <span
+                          className={`font-black ${
+                            scrubberPoint.val >= dailyTarget ? "text-[#32D74B]" : "text-amber-500"
+                          }`}
+                        >
+                          {scrubberPoint.val >= dailyTarget ? "Target Met 🎯" : "Pacing"}
+                        </span>
+                      </div>
+                      <div className="text-sm font-black text-blue-500">
+                        {isOverall
+                          ? `${Math.round(scrubberPoint.val)}% Score`
+                          : `${scrubberPoint.val.toFixed(1)} hrs Total`}
+                      </div>
+
+                      {/* Multi-Session Itemized Breakdown */}
+                      {scrubberPoint.sessions && scrubberPoint.sessions.length > 0 && (
+                        <div className="mt-1 pt-1 border-t border-gray-100 dark:border-[#222] flex flex-col gap-0.5">
+                          {scrubberPoint.sessions.map((s, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-[10px] text-gray-500 dark:text-gray-300">
+                              <span className="truncate max-w-[100px]">{s.name}</span>
+                              <span className="font-mono font-bold">
+                                {s.durHours.toFixed(1)}h {s.status === "completed" ? "✅" : s.status === "partial" ? "⏳" : "⭕"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -3083,28 +3479,73 @@ function FocusOS() {
             <div className="grid grid-cols-3 gap-2 mt-6">
               <div className="bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl text-center shadow-inner">
                 <div className="text-[9px] text-gray-500 font-black uppercase tracking-widest mb-1">
-                  Average
+                  Daily Avg
                 </div>
                 <div className="text-xl font-black text-blue-500">
-                  {filterTask === "ALL" ? Math.round(avgVal) + "%" : avgVal.toFixed(1) + "h"}
+                  {isOverall ? Math.round(avgVal) + "%" : avgVal.toFixed(1) + "h"}
                 </div>
               </div>
               <div className="bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl text-center shadow-inner">
                 <div className="text-[9px] text-gray-500 font-black uppercase tracking-widest mb-1">
-                  Best Day
+                  Peak Day
                 </div>
                 <div className="text-xl font-black text-[#32D74B]">
-                  {filterTask === "ALL" ? Math.round(maxValReal) + "%" : maxValReal.toFixed(1) + "h"}
+                  {isOverall ? Math.round(maxValReal) + "%" : maxValReal.toFixed(1) + "h"}
                 </div>
               </div>
               <div className="bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl text-center shadow-inner">
                 <div className="text-[9px] text-gray-500 font-black uppercase tracking-widest mb-1">
-                  Total
+                  Period Total
                 </div>
                 <div className="text-xl font-black text-[#FF9F0A]">
-                  {filterTask === "ALL" ? chartData.length + " Days" : totalVal.toFixed(1) + "h"}
+                  {isOverall ? `${daysAchieved}/${chartData.length}d` : `${totalVal.toFixed(1)}h`}
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* ─── PERIOD MILESTONES CARD ────────────────────────────────────── */}
+          <div className={`${themeColors.surface} border ${themeColors.border} rounded-[32px] p-6 mb-6 shadow-sm`}>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-gray-400">
+                  {tf}-Day Period Milestones
+                </span>
+                <h3 className="text-lg font-black text-gray-900 dark:text-white mt-0.5 flex items-center gap-2">
+                  <Icon name={milestoneBadge.icon} size={20} style={{ color: milestoneBadge.color }} />
+                  {milestoneBadge.tier}
+                </h3>
+              </div>
+              <span className="text-lg font-black" style={{ color: milestoneBadge.color }}>
+                {milestonePercent}%
+              </span>
+            </div>
+
+            {/* Milestone Progress Bar */}
+            <div className="h-3 w-full bg-gray-100 dark:bg-[#222] rounded-full overflow-hidden p-0.5 mb-3">
+              <div
+                className="h-full rounded-full transition-all duration-1000"
+                style={{
+                  width: `${Math.min(100, Math.max(5, milestonePercent))}%`,
+                  backgroundColor: milestoneBadge.color,
+                }}
+              />
+            </div>
+
+            <div className="flex justify-between text-xs font-mono font-bold text-gray-500 dark:text-gray-400">
+              <span>
+                Achieved: {isOverall ? `${Math.round(avgVal)}% avg` : `${totalVal.toFixed(1)} hrs`}
+              </span>
+              <span>
+                Target: {isOverall ? "80% consistency" : `${periodTarget.toFixed(1)} hrs total`}
+              </span>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-[#222] flex justify-between items-center text-xs">
+              <span className="font-bold text-gray-500">Days Met Daily Milestone:</span>
+              <span className="font-black text-[#32D74B]">
+                {daysAchieved} of {chartData.length} days ({chartData.length > 0 ? Math.round((daysAchieved / chartData.length) * 100) : 0}%)
+              </span>
             </div>
           </div>
         </div>
@@ -3565,11 +4006,16 @@ function FocusOS() {
                           {tObj.period}
                         </span>
                       </div>
-                      <div className="text-sm font-black mt-2 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                      <div className="text-sm font-black mt-2 flex items-center gap-1.5 text-gray-800 dark:text-gray-200 flex-wrap">
                         <Icon name={p.icon || "monitoring"} size={16} />
-                        {p.name}
+                        <span>{p.name}</span>
+                        {p.priority && !p.zeroXp && (
+                          <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded border ${pBadge(p.priority).bg}`}>
+                            {pBadge(p.priority).text}
+                          </span>
+                        )}
                         {p.zeroXp && (
-                          <span className="text-[9px] uppercase tracking-wider bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded font-black">
+                          <span className="text-[9px] uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-black">
                             0XP
                           </span>
                         )}
@@ -3852,6 +4298,7 @@ function FocusOS() {
           {renderFirebaseModal()}
           {renderBackupModal()}
           {renderStorageInspectorModal()}
+          {renderAddTaskGraphModal()}
           {editingPreset && renderPresetEditor()}
           {partialModal && renderPartialModal()}
           {showCalendar && renderCalendar()}
