@@ -943,6 +943,7 @@ function TYMVERA() {
 
   // ─── INITIAL BOOT & STORAGE LOADING ─────────────────────────────────────────
   useEffect(() => {
+    document.title = "TYMVERA";
     let twLoaded = false;
     let dbLoaded = false;
 
