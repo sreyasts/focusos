@@ -36,6 +36,8 @@ import {
   getRawStorageDiagnosticReport,
 } from "./services/storageRecovery";
 
+import { idbGet, idbSet, initDB } from "./storage/indexedDb.js";
+
 // ─── ICON SYSTEM (Zero-Dependency Google Material Symbols) ────────────────────
 const normalizeIconName = (name) => {
   if (!name || typeof name !== "string") return "monitoring";
@@ -243,54 +245,6 @@ class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
-
-// ─── INDEXEDDB ENGINE (Local-First Offline Storage) ───────────────────────────
-const DB_NAME = "TYMVERA_PWA_DB";
-const DB_VERSION = 1;
-const STORE_NAME = "app_data";
-
-const initDB = () =>
-  new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME))
-        db.createObjectStore(STORE_NAME);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-const idbGet = async (key, fallback) => {
-  try {
-    const db = await initDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.get(key);
-      request.onsuccess = () =>
-        resolve(request.result !== undefined ? request.result : fallback);
-      request.onerror = () => resolve(fallback);
-    });
-  } catch {
-    return fallback;
-  }
-};
-
-const idbSet = async (key, val) => {
-  try {
-    const db = await initDB();
-    return new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.put(val, key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  } catch (e) {
-    console.error("IDB Write Error:", e);
-  }
-};
 
 // ─── ONLINE STATUS HOOK ───────────────────────────────────────────────────────
 const useOnlineStatus = () => {
