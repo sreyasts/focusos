@@ -1,6 +1,6 @@
-﻿---
+---
 name: Feature request
-about: Suggest an idea or routine tracking enhancement for FocusOS
+about: Suggest an idea or routine tracking enhancement for TYMVERA
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

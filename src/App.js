@@ -1,5 +1,5 @@
 /**
- * FocusOS - Kerala Plus Two & Priority Productivity OS
+ * TYMVERA - Kerala Plus Two & Priority Productivity OS
  * Consolidated Standalone Distribution for Production & Offline PWA
  * Fully Offline-First, Dual-Storage (IndexedDB + LocalStorage), Web Audio Synth Alarms,
  * Precision Notification Engine, Dual-Stepper Time Logging, and Interactive Scrubber Chart.
@@ -15,7 +15,7 @@ import React, {
 
 // ─── EMBEDDED ALARM ENGINE ───────────────────────────────────────────────────
 /**
- * FocusOS System Alarm Engine
+ * TYMVERA System Alarm Engine
  * Features:
  * - Authentic System Alarm Sound (Piercing Piezoelectric Digital Clock 4-Burst Beep)
  * - Emergency Urgency Siren, Android Ringer, and Classic Marimba options
@@ -299,7 +299,7 @@ function calculateAutoSleepTime(todaysBlocks) {
 
 // ─── EMBEDDED NOTIFICATION ENGINE ─────────────────────────────────────────────
 /**
- * FocusOS Precision Notification Engine
+ * TYMVERA Precision Notification Engine
  * Features:
  * - Customizable lead time (0 min for instant/exact time, 1m, 2m, 5m, 10m, etc.)
  * - Start & End milestone alerts for every scheduled task
@@ -467,7 +467,7 @@ function checkScheduleNotifications({
 
 // ─── EMBEDDED FIREBASE CLOUD SYNC ─────────────────────────────────────────────
 /**
- * FocusOS Firebase Authentication & Cloud Sync Service
+ * TYMVERA Firebase Authentication & Cloud Sync Service
  * Features:
  * - Google Sign-In via Firebase Auth (Desktop popup + Mobile PWA redirect fallback)
  * - Automatic background cloud sync of routines, timeline logs, hours, smart alarms, and settings
@@ -487,7 +487,7 @@ const DEFAULT_FIREBASE_CONFIG = {
 
 function getActiveFirebaseConfig() {
   try {
-    const custom = localStorage.getItem('FOCUSOS_FIREBASE_CONFIG');
+    const custom = localStorage.getItem('TYMVERA_FIREBASE_CONFIG');
     if (custom) return JSON.parse(custom);
   } catch (e) {}
   return DEFAULT_FIREBASE_CONFIG;
@@ -495,7 +495,7 @@ function getActiveFirebaseConfig() {
 
 function saveCustomFirebaseConfig(config) {
   try {
-    localStorage.setItem('FOCUSOS_FIREBASE_CONFIG', JSON.stringify(config));
+    localStorage.setItem('TYMVERA_FIREBASE_CONFIG', JSON.stringify(config));
     window.location.reload();
   } catch (e) {
     console.error('Failed to save Firebase config:', e);
@@ -653,12 +653,12 @@ async function syncUserDataToCloud(userId, data) {
     const cleanNotif = JSON.parse(JSON.stringify(data.notificationConfig || {}));
 
     const payload = {
-      focusos_history: cleanHistory,
-      focusos_presets: cleanPresets,
-      focusos_alarms: cleanAlarms,
-      focusos_notif_config: cleanNotif,
-      focusos_theme: data.themeMode || 'system',
-      focusos_chart_mode: data.chartViewMode || 'line',
+      tymvera_history: cleanHistory,
+      tymvera_presets: cleanPresets,
+      tymvera_alarms: cleanAlarms,
+      tymvera_notif_config: cleanNotif,
+      tymvera_theme: data.themeMode || 'system',
+      tymvera_chart_mode: data.chartViewMode || 'line',
       // Dual-compatibility mirror
       history: cleanHistory,
       presets: cleanPresets,
@@ -670,7 +670,7 @@ async function syncUserDataToCloud(userId, data) {
     await db.collection('users').doc(userId).set(payload, { merge: true });
     return { success: true, timestamp: payload.lastSyncedAt };
   } catch (err) {
-    console.error('Error syncing FocusOS data to Firestore:', err);
+    console.error('Error syncing TYMVERA data to Firestore:', err);
     throw err;
   }
 }
@@ -687,18 +687,18 @@ async function loadUserDataFromCloud(userId) {
     if (docSnap.exists) {
       const data = docSnap.data();
       return {
-        history: data.focusos_history || data.history || {},
-        presets: data.focusos_presets || data.presets || [],
-        alarms: data.focusos_alarms || data.alarms || null,
-        notificationConfig: data.focusos_notif_config || data.focusos_notif || data.notificationConfig || null,
-        themeMode: data.focusos_theme || data.theme || null,
-        chartViewMode: data.focusos_chart_mode || null,
+        history: data.tymvera_history || data.history || {},
+        presets: data.tymvera_presets || data.presets || [],
+        alarms: data.tymvera_alarms || data.alarms || null,
+        notificationConfig: data.tymvera_notif_config || data.tymvera_notif || data.notificationConfig || null,
+        themeMode: data.tymvera_theme || data.theme || null,
+        chartViewMode: data.tymvera_chart_mode || null,
         lastSyncedAt: data.lastSyncedAt || data.updatedAt || null,
         rawPlan: data.plan || null,
       };
     }
   } catch (err) {
-    console.error('Error loading FocusOS data from Firestore:', err);
+    console.error('Error loading TYMVERA data from Firestore:', err);
   }
   return null;
 }
@@ -706,11 +706,11 @@ async function loadUserDataFromCloud(userId) {
 
 // ─── EMBEDDED UNIVERSAL STORAGE & DATA RECOVERY ENGINE ─────────────────────────
 /**
- * FocusOS Universal Storage & Data Recovery Engine
+ * TYMVERA Universal Storage & Data Recovery Engine
  * Exhaustively scans all available client storage:
- * - window.localStorage (FocusOS history, PlusTwo mission state, backups, raw date keys)
- * - All IndexedDB databases & stores (TYMVERA_PWA_DB, FocusOS_DB, Firestore cache, keyval, localforage)
- * - Deep multi-schema parser: FocusOS history format, Kerala Plus Two study planner plans,
+ * - window.localStorage (TYMVERA history, PlusTwo mission state, backups, raw date keys)
+ * - All IndexedDB databases & stores (TYMVERA_PWA_DB, TYMVERAsOS_DB, Firestore cache, keyval, localforage)
+ * - Deep multi-schema parser: TYMVERA history format, Kerala Plus Two study planner plans,
  *   Firestore offline caches, raw arrays of logs, double-stringified JSON, and date-keyed entries.
  * - Non-destructive merge preserving every logged checkmark, actual minutes, and score.
  */
@@ -719,7 +719,7 @@ function isDateString(str) {
   return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str);
 }
 
-// Helper to check if an object looks like a date-keyed FocusOS history collection
+// Helper to check if an object looks like a date-keyed TYMVERAusOS history collection
 function isHistoryRecord(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
   const keys = Object.keys(obj);
@@ -734,7 +734,7 @@ function isHistoryRecord(obj) {
   return false;
 }
 
-// Helper to check if an array looks like FocusOS presets
+// Helper to check if an array looks like TYMVERA presets
 function isPresetArray(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return false;
   return arr.some(item => item && typeof item === 'object' && item.id && item.name && item.start && item.end);
@@ -742,7 +742,7 @@ function isPresetArray(arr) {
 
 /**
  * Parses and converts Kerala Plus Two Study Planner format (plusTwoMissionState_v2 / plusTwoPlanState)
- * into native FocusOS daily history records and recurring presets.
+ * into native TYMVERA daily history records and recurring presets.
  */
 function extractFromPlusTwoPlan(planData) {
   const recoveredDays = {};
@@ -855,7 +855,7 @@ function extractFromPlusTwoPlan(planData) {
 /**
  * Universal Recursive Extractor
  * Accepts any arbitrary object, array, or stringified payload and searches for
- * FocusOS history, PlusTwo plans, single day logs, or date-keyed structures.
+ * TYMVERA history, PlusTwo plans, single day logs, or date-keyed structures.
  */
 function extractHistoryAndPresetsFromAny(value, keyHint = '', depth = 0) {
   const recoveredDays = {};
@@ -910,7 +910,7 @@ function extractHistoryAndPresetsFromAny(value, keyHint = '', depth = 0) {
     }
   }
 
-  // 5. Check if value is a standard FocusOS date-keyed history dictionary
+  // 5. Check if value is a standard TYMVERA date-keyed history dictionary
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     let hasDateKeys = false;
     Object.entries(value).forEach(([k, dayVal]) => {
@@ -1042,12 +1042,12 @@ async function scanIndexedDB() {
     return { recoveredDays, recoveredPresets, dbsScanned, storesScanned, dbDetails };
   }
 
-  // Candidate DB names across past and present FocusOS and Study Planner builds
+  // Candidate DB names across past and present TYMVERA and Study Planner builds
   const candidateDBs = [
     "TYMVERA_PWA_DB",
-    "FocusOS_DB",
+    "TYMVERA_DB",
     "TYMVERA",
-    "focusos_db",
+    "TYMVERA_DB",
     "TYMVERA",
     "app_data",
     "keyval-store",
@@ -1331,7 +1331,7 @@ function exportBackupData({ history, presets, alarms, notificationConfig }) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `focusos-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `tymvera-backup-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1376,7 +1376,7 @@ function parseImportBackup(jsonString) {
 }
 
 
-// ─── FOCUSOS APPLICATION ──────────────────────────────────────────────────────
+// ─── TYMVERA APPLICATION ──────────────────────────────────────────────────────
 // ─── ICON SYSTEM (Zero-Dependency Google Material Symbols) ────────────────────
 const normalizeIconName = (name) => {
   if (!name || typeof name !== "string") return "monitoring";
@@ -2208,7 +2208,7 @@ const TaskItem = ({
   );
 };
 
-// ─── MAIN APP COMPONENT (FocusOS) ─────────────────────────────────────────────
+// ─── MAIN APP COMPONENT (TYMVERA) ─────────────────────────────────────────────
 function TYMVERA() {
   const [isReady, setIsReady] = useState(false);
   const [tab, setTab] = useState("today");

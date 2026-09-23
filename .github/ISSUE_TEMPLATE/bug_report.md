@@ -1,6 +1,6 @@
-﻿---
+---
 name: Bug report
-about: Create a report to help us improve FocusOS
+about: Create a report to help us improve TYMVERA
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -25,5 +25,5 @@ If applicable, add screenshots to help explain your problem.
 **Environment (please complete the following information):**
  - Device: [e.g. iPhone 15, OnePlus 11, Mac, Windows PC]
  - OS: [e.g. iOS 18, Android 14, Windows 11]
- - Browser: [e.g. Chrome, Safari, Edge, FocusOS PWA]
- - Version / URL: [e.g. focusos-web.web.app]
+ - Browser: [e.g. Chrome, Safari, Edge, TYMVERA PWA]
+ - Version / URL: [e.g. TYMVERA-web.web.app]

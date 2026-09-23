@@ -1,5 +1,5 @@
 /**
- * FocusOS System Alarm Engine
+ * TYMVERA System Alarm Engine
  * Features:
  * - Authentic System Alarm Sound (Piercing Piezoelectric Digital Clock 4-Burst Beep)
  * - Emergency Urgency Siren, Android Ringer, and Classic Marimba options

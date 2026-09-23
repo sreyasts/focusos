@@ -1,9 +1,9 @@
 /**
- * FocusOS Universal Storage & Data Recovery Engine
+ * TYMVERA Universal Storage & Data Recovery Engine
  * Exhaustively scans all available client storage:
- * - window.localStorage (FocusOS history, PlusTwo mission state, backups, raw date keys)
- * - All IndexedDB databases & stores (FocusOS_PWA_DB, FocusOS_DB, Firestore cache, keyval, localforage)
- * - Deep multi-schema parser: FocusOS history format, Kerala Plus Two study planner plans,
+ * - window.localStorage (TYMVERA history, PlusTwo mission state, backups, raw date keys)
+ * - All IndexedDB databases & stores (TYMVERA_PWA_DB, TYMVERA_DB, Firestore cache, keyval, localforage)
+ * - Deep multi-schema parser: TYMVERA history format, Kerala Plus Two study planner plans,
  *   Firestore offline caches, raw arrays of logs, double-stringified JSON, and date-keyed entries.
  * - Non-destructive merge preserving every logged checkmark, actual minutes, and score.
  */
@@ -12,7 +12,7 @@ export function isDateString(str) {
   return typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str);
 }
 
-// Helper to check if an object looks like a date-keyed FocusOS history collection
+// Helper to check if an object looks like a date-keyed TYMVERA history collection
 export function isHistoryRecord(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
   const keys = Object.keys(obj);
@@ -27,7 +27,7 @@ export function isHistoryRecord(obj) {
   return false;
 }
 
-// Helper to check if an array looks like FocusOS presets
+// Helper to check if an array looks like TYMVERA presets
 export function isPresetArray(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return false;
   return arr.some(item => item && typeof item === 'object' && item.id && item.name && item.start && item.end);
@@ -35,7 +35,7 @@ export function isPresetArray(arr) {
 
 /**
  * Parses and converts Kerala Plus Two Study Planner format (plusTwoMissionState_v2 / plusTwoPlanState)
- * into native FocusOS daily history records and recurring presets.
+ * into native TYMVERA daily history records and recurring presets.
  */
 export function extractFromPlusTwoPlan(planData) {
   const recoveredDays = {};
@@ -148,7 +148,7 @@ export function extractFromPlusTwoPlan(planData) {
 /**
  * Universal Recursive Extractor
  * Accepts any arbitrary object, array, or stringified payload and searches for
- * FocusOS history, PlusTwo plans, single day logs, or date-keyed structures.
+ * TYMVERA history, PlusTwo plans, single day logs, or date-keyed structures.
  */
 export function extractHistoryAndPresetsFromAny(value, keyHint = '', depth = 0) {
   const recoveredDays = {};
@@ -203,7 +203,7 @@ export function extractHistoryAndPresetsFromAny(value, keyHint = '', depth = 0) 
     }
   }
 
-  // 5. Check if value is a standard FocusOS date-keyed history dictionary
+  // 5. Check if value is a standard TYMVERA date-keyed history dictionary
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     let hasDateKeys = false;
     Object.entries(value).forEach(([k, dayVal]) => {
@@ -335,13 +335,13 @@ export async function scanIndexedDB() {
     return { recoveredDays, recoveredPresets, dbsScanned, storesScanned, dbDetails };
   }
 
-  // Candidate DB names across past and present FocusOS and Study Planner builds
+  // Candidate DB names across past and present TYMVERA and Study Planner builds
   const candidateDBs = [
-    "FocusOS_PWA_DB",
-    "FocusOS_DB",
-    "FocusOS",
-    "focusos_db",
-    "focusos",
+    "TYMVERA_PWA_DB",
+    "TYMVERA_DB",
+    "TYMVERA",
+    "TYMVERA_db",
+    "TYMVERA",
     "app_data",
     "keyval-store",
     "localforage",
@@ -558,7 +558,7 @@ export async function performDeepScanAndRecover({ currentHistory = {}, currentPr
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem('fo6_history', JSON.stringify(mergedHistory));
-        window.localStorage.setItem('focusos_history_master_backup', JSON.stringify(mergedHistory));
+        window.localStorage.setItem('TYMVERA_history_master_backup', JSON.stringify(mergedHistory));
         window.localStorage.setItem('fo6_presets', JSON.stringify(mergedPresets));
       }
     } catch (e) {}
@@ -611,7 +611,7 @@ export async function getRawStorageDiagnosticReport() {
  */
 export function exportBackupData({ history, presets, alarms, notificationConfig }) {
   const payload = {
-    app: "FocusOS",
+    app: "TYMVERA",
     version: "6.0-pro",
     exportedAt: new Date().toISOString(),
     history: history || {},
@@ -624,7 +624,7 @@ export function exportBackupData({ history, presets, alarms, notificationConfig 
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `focusos-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `TYMVERA-backup-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

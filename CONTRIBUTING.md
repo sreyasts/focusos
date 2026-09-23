@@ -1,6 +1,6 @@
-# Contributing to FocusOS
+# Contributing to TYMVERA
 
-Thank you for your interest in contributing to **FocusOS**! We welcome contributions from developers, students, designers, and productivity enthusiasts worldwide.
+Thank you for your interest in contributing to **TYMVERA**! We welcome contributions from developers, students, designers, and productivity enthusiasts worldwide.
 
 ---
 
@@ -11,8 +11,8 @@ Thank you for your interest in contributing to **FocusOS**! We welcome contribut
 
 2. **Clone your Fork**:
    `ash
-   git clone https://github.com/<your-username>/focusos.git
-   cd focusos
+   git clone https://github.com/<your-username>/TYMVERA.git
+   cd TYMVERA
    `
 
 3. **Install Dependencies**:
@@ -35,7 +35,7 @@ Thank you for your interest in contributing to **FocusOS**! We welcome contribut
 
 ## 🛠️ Code Architecture
 
-FocusOS is designed with an **offline-first, zero-runtime-dependency** philosophy:
+TYMVERA is designed with an **offline-first, zero-runtime-dependency** philosophy:
 - **src/App.jsx**: Main application code (React 19, Tailwind CSS, Material Symbols).
 - **src/services/alarmEngine.js**: Precision Web Audio synth engine for offline alarms.
 - **src/services/notificationEngine.js**: Web Notification & in-app toast scheduler.
@@ -47,7 +47,7 @@ FocusOS is designed with an **offline-first, zero-runtime-dependency** philosoph
 
 ## 📋 Guidelines
 
-- **Keep It Distraction-Free**: FocusOS is built to help users execute routines without friction. Features should be fast, minimal, and mobile-friendly.
+- **Keep It Distraction-Free**: TYMVERA is built to help users execute routines without friction. Features should be fast, minimal, and mobile-friendly.
 - **Offline First**: All core functionality (tracking, alarms, analytics, milestones) must work 100% offline without requiring internet or sign-in.
 - **Touch Ergonomics**: All interactive elements must have minimum 40px touch targets for fat-finger mobile use.
 
@@ -55,7 +55,7 @@ FocusOS is designed with an **offline-first, zero-runtime-dependency** philosoph
 
 ## 🐛 Reporting Bugs & Suggesting Features
 
-- Use our [Issue Templates](https://github.com/sreyasts/focusos/issues/new/choose) to report bugs or submit feature proposals.
+- Use our [Issue Templates](https://github.com/sreyasts/TYMVERA/issues/new/choose) to report bugs or submit feature proposals.
 - Include browser/device details and screenshots where applicable.
 
-Thank you for making FocusOS better!
+Thank you for making TYMVERA better!

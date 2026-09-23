@@ -1,5 +1,5 @@
 /**
- * FocusOS Precision Notification Engine
+ * TYMVERA Precision Notification Engine
  * Features:
  * - Customizable lead time (0 min for instant/exact time, 1m, 2m, 5m, 10m, etc.)
  * - Start & End milestone alerts for every scheduled task

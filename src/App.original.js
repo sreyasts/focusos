@@ -57,7 +57,7 @@ class ErrorBoundary extends React.Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, errorInfo) {
-    console.error("FocusOS Crash Intercepted:", error, errorInfo);
+    console.error("TYMVERA Crash Intercepted:", error, errorInfo);
   }
   render() {
     if (this.state.hasError) {
@@ -120,7 +120,7 @@ class ErrorBoundary extends React.Component {
           </button>
           <button
             onClick={() => {
-              const req = indexedDB.deleteDatabase("FocusOS_PWA_DB");
+              const req = indexedDB.deleteDatabase("TYMVERA_PWA_DB");
               req.onsuccess = () => window.location.reload();
               req.onerror = () => {
                 alert(
@@ -157,7 +157,7 @@ class ErrorBoundary extends React.Component {
 }
 
 // ─── INDEXEDDB ENGINE (Local-First Offline Storage) ───────────────────────────
-const DB_NAME = "FocusOS_PWA_DB";
+const DB_NAME = "TYMVERA_PWA_DB";
 const DB_VERSION = 1;
 const STORE_NAME = "app_data";
 
@@ -223,8 +223,8 @@ const usePWA = () => {
     // Now securely looking for icon.png
     const absoluteIconUrl = window.location.origin + "/icon.png";
     const manifest = {
-      name: "FocusOS",
-      short_name: "FocusOS",
+      name: "TYMVERA",
+      short_name: "TYMVERA",
       description: "Priority-weighted productivity tracker",
       start_url: window.location.origin + "/",
       display: "standalone",
@@ -263,7 +263,7 @@ const usePWA = () => {
 
     if ("serviceWorker" in navigator) {
       const swCode = `
-        const CACHE_NAME = 'focusos-pwa-v22';
+        const CACHE_NAME = 'TYMVERA-pwa-v22';
         self.addEventListener('install', (e) => { 
             e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(['/', '/index.html', '${absoluteIconUrl}', 'https://cdn.tailwindcss.com', 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0'])).catch(()=>{})); 
             self.skipWaiting(); 
@@ -687,7 +687,7 @@ const TaskCard = ({
 };
 
 // ─── MAIN APP COMPONENT ───────────────────────────────────────────────────────
-function FocusOS() {
+function TYMVERA() {
   const [isReady, setIsReady] = useState(false);
   const [tab, setTab] = useState("today");
   const [selDate, setSelDate] = useState(todayStr());
@@ -1952,7 +1952,7 @@ function FocusOS() {
               onClick={handleInstallClick}
               className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white font-black py-4 rounded-[24px] flex justify-center items-center gap-3 shadow-lg shadow-blue-500/30 active:scale-[0.98] transition-transform text-lg"
             >
-              <Icon name="download" size={24} /> Install FocusOS App
+              <Icon name="download" size={24} /> Install TYMVERA App
             </button>
             <p className="text-xs text-center font-medium text-gray-500 mt-3 px-4">
               Installs a lightning-fast, offline-capable version directly to
@@ -2120,7 +2120,7 @@ function FocusOS() {
         >
           <button
             onClick={() => {
-              const req = indexedDB.deleteDatabase("FocusOS_PWA_DB");
+              const req = indexedDB.deleteDatabase("TYMVERA_PWA_DB");
               req.onsuccess = () => window.location.reload();
               req.onerror = () => {
                 alert("Failed to wipe. Please try again.");
@@ -2624,7 +2624,7 @@ function FocusOS() {
       >
         <img
           src="icon.png"
-          alt="FocusOS"
+          alt="TYMVERA"
           style={{
             width: 100,
             height: 100,
@@ -2713,7 +2713,7 @@ function FocusOS() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <FocusOS />
+      <TYMVERA />
     </ErrorBoundary>
   );
 }

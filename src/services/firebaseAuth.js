@@ -1,5 +1,5 @@
 /**
- * FocusOS Firebase Authentication & Cloud Sync Service
+ * TYMVERA Firebase Authentication & Cloud Sync Service
  * Features:
  * - Google Sign-In via Firebase Auth (Desktop popup + Mobile PWA redirect fallback)
  * - Automatic background cloud sync of routines, timeline logs, hours, smart alarms, and settings
@@ -19,7 +19,7 @@ const DEFAULT_FIREBASE_CONFIG = {
 
 export function getActiveFirebaseConfig() {
   try {
-    const custom = localStorage.getItem('FOCUSOS_FIREBASE_CONFIG');
+    const custom = localStorage.getItem('TYMVERA_FIREBASE_CONFIG');
     if (custom) return JSON.parse(custom);
   } catch (e) {}
   return DEFAULT_FIREBASE_CONFIG;
@@ -27,7 +27,7 @@ export function getActiveFirebaseConfig() {
 
 export function saveCustomFirebaseConfig(config) {
   try {
-    localStorage.setItem('FOCUSOS_FIREBASE_CONFIG', JSON.stringify(config));
+    localStorage.setItem('TYMVERA_FIREBASE_CONFIG', JSON.stringify(config));
     window.location.reload();
   } catch (e) {
     console.error('Failed to save Firebase config:', e);
@@ -185,12 +185,12 @@ export async function syncUserDataToCloud(userId, data) {
     const cleanNotif = JSON.parse(JSON.stringify(data.notificationConfig || {}));
 
     const payload = {
-      focusos_history: cleanHistory,
-      focusos_presets: cleanPresets,
-      focusos_alarms: cleanAlarms,
-      focusos_notif_config: cleanNotif,
-      focusos_theme: data.themeMode || 'system',
-      focusos_chart_mode: data.chartViewMode || 'line',
+      TYMVERA_history: cleanHistory,
+      TYMVERA_presets: cleanPresets,
+      TYMVERA_alarms: cleanAlarms,
+      TYMVERA_notif_config: cleanNotif,
+      TYMVERA_theme: data.themeMode || 'system',
+      TYMVERA_chart_mode: data.chartViewMode || 'line',
       // Dual-compatibility mirror
       history: cleanHistory,
       presets: cleanPresets,
@@ -202,7 +202,7 @@ export async function syncUserDataToCloud(userId, data) {
     await db.collection('users').doc(userId).set(payload, { merge: true });
     return { success: true, timestamp: payload.lastSyncedAt };
   } catch (err) {
-    console.error('Error syncing FocusOS data to Firestore:', err);
+    console.error('Error syncing TYMVERA data to Firestore:', err);
     throw err;
   }
 }
@@ -219,18 +219,18 @@ export async function loadUserDataFromCloud(userId) {
     if (docSnap.exists) {
       const data = docSnap.data();
       return {
-        history: data.focusos_history || data.history || {},
-        presets: data.focusos_presets || data.presets || [],
-        alarms: data.focusos_alarms || data.alarms || null,
-        notificationConfig: data.focusos_notif_config || data.focusos_notif || data.notificationConfig || null,
-        themeMode: data.focusos_theme || data.theme || null,
-        chartViewMode: data.focusos_chart_mode || null,
+        history: data.TYMVERA_history || data.history || {},
+        presets: data.TYMVERA_presets || data.presets || [],
+        alarms: data.TYMVERA_alarms || data.alarms || null,
+        notificationConfig: data.TYMVERA_notif_config || data.TYMVERA_notif || data.notificationConfig || null,
+        themeMode: data.TYMVERA_theme || data.theme || null,
+        chartViewMode: data.TYMVERA_chart_mode || null,
         lastSyncedAt: data.lastSyncedAt || data.updatedAt || null,
         rawPlan: data.plan || null,
       };
     }
   } catch (err) {
-    console.error('Error loading FocusOS data from Firestore:', err);
+    console.error('Error loading TYMVERA data from Firestore:', err);
   }
   return null;
 }
