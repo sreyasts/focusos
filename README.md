@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://focusos-web.web.app"><img src="https://img.shields.io/badge/Live%20App-focusos--web.web.app-10B981?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live App" /></a>
-  <a href="https://focusos-pwa.web.app"><img src="https://img.shields.io/badge/PWA-focusos--pwa.web.app-8B5CF6?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" /></a>
+  <a href="https://focusos-web.web.app"><img src="https://img.shields.io/badge/PWA-Installable-8B5CF6?style=for-the-badge&logo=pwa&logoColor=white" alt="PWA" /></a>
   <a href="https://github.com/sreyasts/focusos/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/sreyasts/focusos/deploy.yml?branch=master&style=for-the-badge&label=Deploy&logo=githubactions&logoColor=white" alt="Deploy Status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License" /></a>
   <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 19" /></a>
@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="#-why-focusos">Why FocusOS</a> •
-  <a href="#-live-apps--instant-access">Live Demos</a> •
+  <a href="#-live-app--instant-access">Live Demo</a> •
   <a href="#-core-features">Key Features</a> •
   <a href="#-mobile-pwa-installation">PWA Install</a> •
   <a href="#-local-development">Getting Started</a> •
@@ -42,14 +42,13 @@ Most productivity apps trap you in **organizational procrastination**: endless n
 
 ---
 
-## 🚀 Live Apps & Instant Access
+## 🚀 Live App & Instant Access
 
 You can use FocusOS right now in your browser with **zero account required**:
 
-| Platform | URL | Description |
-| :--- | :--- | :--- |
-| 🌐 **Primary Web App** | [**focusos-web.web.app**](https://focusos-web.web.app) | Production web app on Google Firebase global CDN |
-| 📱 **Standalone PWA** | [**focusos-pwa.web.app**](https://focusos-pwa.web.app) | Dedicated progressive web app optimized for iOS & Android home screens |
+**[👉 Launch FocusOS (focusos-web.web.app)](https://focusos-web.web.app)**
+
+> FocusOS is built as an offline-first Progressive Web App (PWA). You can use it directly in any modern desktop or mobile browser, or install it to your home screen for a seamless standalone app experience.
 
 ---
 
@@ -108,13 +107,13 @@ Log partial task completion in seconds without mental math:
 FocusOS is a fully certified Progressive Web App. You can install it directly to your home screen with zero app store downloads:
 
 ### On iPhone (iOS Safari):
-1. Open **[focusos-pwa.web.app](https://focusos-pwa.web.app)** in Safari.
+1. Open **[focusos-web.web.app](https://focusos-web.web.app)** in Safari.
 2. Tap the **Share** button (box with an arrow pointing up).
 3. Scroll down and tap **Add to Home Screen**.
 4. Tap **Add**. FocusOS now launches in full-screen standalone mode with no browser address bar!
 
 ### On Android (Chrome):
-1. Open **[focusos-pwa.web.app](https://focusos-pwa.web.app)** in Chrome.
+1. Open **[focusos-web.web.app](https://focusos-web.web.app)** in Chrome.
 2. Tap the **three dots menu** (⋮) or tap the **"Install FocusOS"** banner.
 3. Tap **Install**. FocusOS will be added to your app drawer and home screen.
 

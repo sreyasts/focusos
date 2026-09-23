@@ -24,7 +24,7 @@ jobs:
       - name: Build Production Assets
         run: npm run build
 
-      - name: Deploy to Firebase Hosting (focusos-web & focusos-pwa)
+      - name: Deploy to Firebase Hosting
         run: |
           npx -y firebase-tools@latest deploy --only hosting --project mission-plustwo --token "${{ secrets.FIREBASE_TOKEN }}"
         env:
