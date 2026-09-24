@@ -890,20 +890,23 @@ function TYMVERA() {
 
   // Alarms State (Single Signature Obsidian Beacon Sound)
   const [alarms, setAlarms] = useState({
-    wake: { enabled: false, time: "05:00", autoSync: true },
-    sleep: { enabled: false, time: "22:00", autoSync: true },
+    wake: { enabled: false, time: "05:00", autoSync: false },
+    sleep: { enabled: false, time: "22:00", autoSync: false },
   });
   const [activeAlarm, setActiveAlarm] = useState(null);
 
-  // Notifications State
+  // Notifications State (Enabled by default for instant milestone alerts)
   const [notificationConfig, setNotificationConfig] = useState({
-    enabled: false,
+    enabled: true,
     leadMins: 0, // 0 for exact instant time
     notifyStart: true,
     notifyEnd: true,
     sound: true,
   });
   const [inAppToast, setInAppToast] = useState(null);
+  const [notificationPermission, setNotificationPermission] = useState(
+    typeof window !== "undefined" && "Notification" in window ? Notification.permission : "default"
+  );
 
   // Authentication & Cloud Sync State
   const [currentUser, setCurrentUser] = useState(null);
@@ -1017,11 +1020,11 @@ function TYMVERA() {
         let pres = await idbGet("fo6_presets", null);
         const th = await idbGet("fo6_theme", "system");
         const savedAlarms = await idbGet("fo6_alarms", {
-          wake: { enabled: false, time: "05:00", autoSync: true },
-          sleep: { enabled: false, time: "22:00", autoSync: true },
+          wake: { enabled: false, time: "05:00", autoSync: false },
+          sleep: { enabled: false, time: "22:00", autoSync: false },
         });
         const savedNotif = await idbGet("fo6_notif_config", {
-          enabled: false,
+          enabled: true,
           leadMins: 0,
           notifyStart: true,
           notifyEnd: true,
@@ -1142,8 +1145,11 @@ function TYMVERA() {
         setNotificationConfig(savedNotif);
         setChartViewMode(savedChart);
 
-        if ("Notification" in window && Notification.permission === "granted") {
-          setNotificationConfig((prev) => ({ ...prev, enabled: true }));
+        if (typeof window !== "undefined" && "Notification" in window) {
+          setNotificationPermission(Notification.permission);
+          if (Notification.permission === "granted") {
+            setNotificationConfig((prev) => ({ ...prev, enabled: true }));
+          }
         }
 
         dbLoaded = true;
@@ -1460,7 +1466,7 @@ function TYMVERA() {
 
   // ─── NOTIFICATION EVALUATOR (5s) ────────────────────────────────────────────
   useEffect(() => {
-    if (!notificationConfig.enabled || !isReady) return;
+    if (!isReady) return;
 
     const interval = setInterval(() => {
       const today = todayStr();
@@ -2153,8 +2159,8 @@ function TYMVERA() {
         <div
           className={`${themeColors.surface} border border-blue-500/40 rounded-2xl p-4 shadow-2xl flex items-start gap-3.5 backdrop-blur-xl ring-2 ring-blue-500/20`}
         >
-          <div className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-500 flex items-center justify-center flex-shrink-0">
-            <Icon name="notifications_active" size={20} />
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0 overflow-hidden shadow-sm">
+            <img src="/icon-192.png" alt="TYMVERA" className="w-7 h-7 object-contain" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-black tracking-tight text-gray-900 dark:text-white flex items-center justify-between">
@@ -3373,6 +3379,51 @@ function TYMVERA() {
             )}
           </div>
         )}
+
+        {/* Native Notification & Sound Permission Prompt Banner */}
+        {typeof window !== "undefined" &&
+          "Notification" in window &&
+          notificationPermission !== "granted" && (
+            <div className="px-4 mb-4">
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between gap-3 shadow-sm backdrop-blur-md">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img
+                    src="/icon-192.png"
+                    alt="TYMVERA"
+                    className="w-9 h-9 rounded-xl object-contain shrink-0 shadow-sm"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-xs font-black text-gray-900 dark:text-white truncate">
+                      Enable Section Alerts & Alarms
+                    </div>
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                      Receive sound & notifications when routine blocks start and finish.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    const granted = await requestNotificationPermission();
+                    if (typeof window !== "undefined" && "Notification" in window) {
+                      setNotificationPermission(Notification.permission);
+                    }
+                    if (granted) {
+                      setNotificationConfig((prev) => ({ ...prev, enabled: true }));
+                      playNotificationChime(1.0);
+                      dispatchNotification({
+                        title: "⚡ TYMVERA Alerts Active",
+                        body: "Milestone alerts and obsidian alarms are now active with sound.",
+                        onInAppToast: setInAppToast,
+                      });
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shrink-0 shadow-md shadow-blue-500/25 active:scale-95 transition-all"
+                >
+                  Allow Alerts
+                </button>
+              </div>
+            </div>
+          )}
 
         {/* Circular Progress & Daily Metrics Card */}
         <div className="px-4 mb-6">

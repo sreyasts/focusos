@@ -1,10 +1,11 @@
 /**
- * TYMVERA Precision Notification Engine
+ * TYMVERA Precision Notification & Section Milestone Engine
  * Features:
- * - Robust Android PWA & Desktop Notification Dispatch via ServiceWorkerRegistration.showNotification
- * - Resilient Grace-Window Triggering (eliminates dropped alerts caused by phone sleep / timer throttling)
- * - Alarm Native Notification dispatch (rings visual notification on lock screen alongside audio synthesizer)
- * - High-Impact TYMVERA Focus Chime + Tactile Vibration
+ * - Robust dual-mode permission request (supports Promise & Callback APIs on iOS/Android/Desktop)
+ * - Section start, completion, and handover milestone alerts with official TYMVERA logo & theme
+ * - Exact section relevance details: start/end times, session duration, and task name
+ * - Resilient grace window to survive device sleep / background tab throttling
+ * - ServiceWorker showNotification dispatch with icon, badge, haptics & interactive toast
  */
 
 import { playNotificationChime } from './alarmEngine';
@@ -16,24 +17,43 @@ const format12hTime = (t) => {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ap}`;
 };
 
+const calcDurationMins = (start, end) => {
+  if (!start || !end || !start.includes(':') || !end.includes(':')) return 0;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  let diff = eh * 60 + em - (sh * 60 + sm);
+  if (diff <= 0) diff += 24 * 60;
+  return diff;
+};
+
 /**
- * Safely request native notification permissions across desktop & mobile
+ * Safely request native notification permissions across all browsers (Desktop, Android TWA/PWA, iOS)
  */
 export async function requestNotificationPermission() {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return false;
   }
+  if (Notification.permission === 'granted') {
+    return true;
+  }
   try {
-    const perm = await Notification.requestPermission();
-    return perm === 'granted';
+    let perm;
+    // Handle both modern Promise and legacy callback signatures
+    const req = Notification.requestPermission((result) => {
+      perm = result;
+    });
+    if (req && typeof req.then === 'function') {
+      perm = await req;
+    }
+    return perm === 'granted' || Notification.permission === 'granted';
   } catch (err) {
-    console.warn('[NotificationEngine] Permission request failed:', err);
-    return false;
+    console.warn('[NotificationEngine] Permission request error:', err);
+    return Notification.permission === 'granted';
   }
 }
 
 /**
- * Dispatch high-urgency native notification for ringing wake / sleep alarms
+ * High-urgency native lock-screen alert for Wake and Sleep alarms
  */
 export function dispatchAlarmNativeNotification({ title, subtitle }) {
   if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
@@ -44,8 +64,8 @@ export function dispatchAlarmNativeNotification({ title, subtitle }) {
     body: subtitle,
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    vibrate: [300, 100, 300, 100, 500],
-    tag: 'tymvera-active-alarm',
+    vibrate: [350, 120, 350, 120, 600],
+    tag: 'tymvera-system-alarm',
     renotify: true,
     requireInteraction: true,
     silent: false,
@@ -68,36 +88,38 @@ export function dispatchAlarmNativeNotification({ title, subtitle }) {
 }
 
 /**
- * Dispatch milestone notifications via Service Worker / Browser API, in-app toast, and signature chime
+ * Dispatch section milestone notification with official app logo and theme details
  */
 export function dispatchNotification({
   title,
   body,
   icon = '/icon-192.png',
   badge = '/icon-192.png',
+  tag = `tymvera_notif_${Date.now()}`,
   onInAppToast,
 }) {
-  // 1. Play loud, crisp TYMVERA focus chime
-  playNotificationChime(0.95);
+  // 1. Play loud signature TYMVERA focus chime
+  playNotificationChime(1.0);
 
-  // 2. Dispatch in-app interactive toast
+  // 2. Dispatch in-app interactive toast for instant visual feedback
   if (typeof onInAppToast === 'function') {
     onInAppToast({
       id: `toast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       title,
       body,
+      icon,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     });
   }
 
-  // 3. Dispatch native browser / Android PWA notification if permission is granted
+  // 3. Dispatch native Android PWA / Desktop notification
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
     const options = {
       body,
       icon,
       badge,
-      vibrate: [180, 80, 180, 80, 250],
-      tag: `tymvera_notif_${Date.now()}`,
+      vibrate: [180, 80, 180, 80, 240],
+      tag,
       renotify: true,
       requireInteraction: false,
       silent: false,
@@ -107,7 +129,7 @@ export function dispatchNotification({
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready
         .then((reg) => reg.showNotification(title, options))
-        .catch((err) => {
+        .catch(() => {
           try {
             new Notification(title, options);
           } catch (e) {}
@@ -121,7 +143,7 @@ export function dispatchNotification({
 }
 
 /**
- * Check schedule for notification triggers with grace-window tolerance for background tab sleep
+ * Check schedule for section start & finish triggers with grace-window tolerance
  */
 export function checkScheduleNotifications({
   todaysBlocks = [],
@@ -135,7 +157,7 @@ export function checkScheduleNotifications({
   dateStr,
   onInAppToast,
 }) {
-  if (!config.enabled || !Array.isArray(todaysBlocks) || todaysBlocks.length === 0) return;
+  if (!Array.isArray(todaysBlocks) || todaysBlocks.length === 0) return;
 
   const now = new Date();
   const currentTotalMins = now.getHours() * 60 + now.getMinutes();
@@ -147,22 +169,21 @@ export function checkScheduleNotifications({
   todaysBlocks.forEach((block) => {
     if (!block || !block.start || !block.end) return;
 
+    const blockKeyId = block.id || block.name || `${block.start}_${block.end}`;
     const [sh, sm] = block.start.split(':').map(Number);
     const startMins = sh * 60 + (sm || 0);
 
     const [eh, em] = block.end.split(':').map(Number);
     let endMins = eh * 60 + (em || 0);
-    // If block spans midnight
     if (endMins <= startMins) endMins += 24 * 60;
 
-    // ─── START MILESTONE EVALUATION (with 3-minute grace window) ───────────
-    if (config.notifyStart) {
+    // ─── SECTION START EVALUATION (with 3-minute grace window) ─────────────
+    if (config.notifyStart !== false) {
       const targetStartMins = startMins - lead;
       const startDiff = currentTotalMins - targetStartMins;
 
-      // Fires if current time is within [0, 3] minutes of target time
       if (startDiff >= 0 && startDiff <= 3) {
-        const cacheKey = `notif_start_${dateStr}_${block.id}_${targetStartMins}`;
+        const cacheKey = `notif_start_${dateStr}_${blockKeyId}_${targetStartMins}`;
         if (!sessionStorage.getItem(cacheKey)) {
           sessionStorage.setItem(cacheKey, 'true');
           startingTasks.push(block);
@@ -170,13 +191,13 @@ export function checkScheduleNotifications({
       }
     }
 
-    // ─── END MILESTONE EVALUATION (with 3-minute grace window) ─────────────
-    if (config.notifyEnd) {
+    // ─── SECTION END EVALUATION (with 3-minute grace window) ───────────────
+    if (config.notifyEnd !== false) {
       const targetEndMins = endMins;
       const endDiff = currentTotalMins - targetEndMins;
 
       if (endDiff >= 0 && endDiff <= 3) {
-        const cacheKey = `notif_end_${dateStr}_${block.id}_${targetEndMins}`;
+        const cacheKey = `notif_end_${dateStr}_${blockKeyId}_${targetEndMins}`;
         if (!sessionStorage.getItem(cacheKey)) {
           sessionStorage.setItem(cacheKey, 'true');
           endingTasks.push(block);
@@ -185,40 +206,45 @@ export function checkScheduleNotifications({
     }
   });
 
-  // Handover: when one task ends right as another starts
+  // 1. Handover Milestone: one section finishes right as the next begins
   if (endingTasks.length > 0 && startingTasks.length > 0) {
     const endingNames = endingTasks.map((b) => b.name).join(', ');
-    const startingNames = startingTasks.map((b) => b.name).join(', ');
-    const nextStartTimes = startingTasks.map((b) => format12hTime(b.start)).join(', ');
+    const startingBlock = startingTasks[0];
+    const duration = calcDurationMins(startingBlock.start, startingBlock.end);
 
     dispatchNotification({
-      title: `🔄 Schedule Handover (${nextStartTimes})`,
-      body: `Finished: ${endingNames} • Starting Now: ${startingNames}`,
+      title: `🔄 Routine Handover • ${startingBlock.name}`,
+      body: `Completed: ${endingNames}. Starting now: ${format12hTime(startingBlock.start)} – ${format12hTime(startingBlock.end)} (${duration}m).`,
+      tag: `tymvera_handover_${dateStr}_${startingBlock.id || startingBlock.name}`,
       onInAppToast,
     });
     return;
   }
 
-  // Dispatch individual ending alerts
+  // 2. Individual Section Completion Milestone
   endingTasks.forEach((block) => {
+    const duration = calcDurationMins(block.start, block.end);
     dispatchNotification({
-      title: `🏁 Task Completed: ${block.name}`,
-      body: `Ended at ${format12hTime(block.end)}. Great job!`,
+      title: `🏁 ${block.name} • Completed`,
+      body: `Finished at ${format12hTime(block.end)} (${duration}m focus logged). Great work!`,
+      tag: `tymvera_end_${dateStr}_${block.id || block.name}`,
       onInAppToast,
     });
   });
 
-  // Dispatch individual starting alerts
+  // 3. Individual Section Starting Milestone
   startingTasks.forEach((block) => {
     const isInstant = lead === 0;
-    const title = isInstant ? `⚡ Starting Now: ${block.name}` : `⏳ Upcoming: ${block.name}`;
+    const duration = calcDurationMins(block.start, block.end);
+    const title = isInstant ? `⚡ ${block.name} • Starting Now` : `⏳ Upcoming: ${block.name}`;
     const body = isInstant
-      ? `Scheduled from ${format12hTime(block.start)} to ${format12hTime(block.end)}.`
-      : `Starts in ${lead} minute${lead > 1 ? 's' : ''} at ${format12hTime(block.start)}.`;
+      ? `${format12hTime(block.start)} – ${format12hTime(block.end)} (${duration}m session)`
+      : `Starts in ${lead}m at ${format12hTime(block.start)} (${duration}m session)`;
 
     dispatchNotification({
       title,
       body,
+      tag: `tymvera_start_${dateStr}_${block.id || block.name}`,
       onInAppToast,
     });
   });
