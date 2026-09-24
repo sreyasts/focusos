@@ -12,11 +12,14 @@ import {
   playNotificationChime,
   calculateAutoWakeTime,
   calculateAutoSleepTime,
+  initAudioContextUnlocker,
+  ALARM_SOUND_TYPES,
 } from "./services/alarmEngine";
 
 import {
   checkScheduleNotifications,
   dispatchNotification,
+  requestNotificationPermission,
 } from "./services/notificationEngine";
 
 import {
@@ -35,6 +38,12 @@ import {
   parseImportBackup,
   getRawStorageDiagnosticReport,
 } from "./services/storageRecovery";
+
+import {
+  renderDailyFocusCard,
+  shareOrDownloadDailyCard,
+  isDailyCardUnlocked,
+} from "./services/shareCardEngine";
 
 // ─── ICON SYSTEM (Zero-Dependency Google Material Symbols) ────────────────────
 const normalizeIconName = (name) => {
@@ -882,6 +891,7 @@ function TYMVERA() {
   const [alarms, setAlarms] = useState({
     wake: { enabled: false, time: "05:00", autoSync: true },
     sleep: { enabled: false, time: "22:00", autoSync: true },
+    soundType: "tymvera_obsidian",
   });
   const [activeAlarm, setActiveAlarm] = useState(null);
 
@@ -930,6 +940,11 @@ function TYMVERA() {
   const [scanReport, setScanReport] = useState(null);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [backupJsonInput, setBackupJsonInput] = useState("");
+
+  // Daily Focus Story Card State (Viral loop unlocked by real study time)
+  const [showShareCardModal, setShowShareCardModal] = useState(false);
+  const [shareCardPreview, setShareCardPreview] = useState(null);
+  const [isGeneratingCard, setIsGeneratingCard] = useState(false);
 
   const handleAddToast = useCallback((toast) => {
     setInAppToast(toast);
@@ -984,13 +999,19 @@ function TYMVERA() {
           document.head.appendChild(link);
         }
 
+        initAudioContextUnlocker();
+
         let hist = await idbGet("fo6_history", null);
         let pres = await idbGet("fo6_presets", null);
         const th = await idbGet("fo6_theme", "system");
         const savedAlarms = await idbGet("fo6_alarms", {
           wake: { enabled: false, time: "05:00", autoSync: true },
           sleep: { enabled: false, time: "22:00", autoSync: true },
+          soundType: "tymvera_obsidian",
         });
+        if (savedAlarms && !savedAlarms.soundType) {
+          savedAlarms.soundType = "tymvera_obsidian";
+        }
         const savedNotif = await idbGet("fo6_notif_config", {
           enabled: false,
           leadMins: 0,
@@ -1373,36 +1394,48 @@ function TYMVERA() {
       setNow(d);
 
       if (!isReady) return;
-      const currentHHMM = d.toTimeString().slice(0, 5);
       const ds = localDateStr(d);
+      const currentTotalMins = d.getHours() * 60 + d.getMinutes();
 
-      // Check Wake Alarm
-      if (alarms.wake.enabled && currentHHMM === alarms.wake.time) {
-        const wakeKey = `alarm_wake_triggered_${ds}`;
-        if (!sessionStorage.getItem(wakeKey) && !activeAlarm) {
-          sessionStorage.setItem(wakeKey, "true");
-          playAlarmSound(0.85);
-          setActiveAlarm({
-            type: "wake",
-            time: alarms.wake.time,
-            title: "🌅 Wake-Up Alarm",
-            subtitle: `First scheduled task begins at ${to12h(alarms.wake.time)}`,
-          });
+      // Check Wake Alarm with 2-minute grace window to eliminate background timer throttling skips
+      if (alarms.wake && alarms.wake.enabled && alarms.wake.time) {
+        const [wh, wm] = alarms.wake.time.split(":").map(Number);
+        const wakeTotalMins = wh * 60 + (wm || 0);
+        const diff = currentTotalMins - wakeTotalMins;
+
+        if (diff >= 0 && diff <= 2) {
+          const wakeKey = `alarm_wake_triggered_${ds}_${alarms.wake.time}`;
+          if (!sessionStorage.getItem(wakeKey) && !activeAlarm) {
+            sessionStorage.setItem(wakeKey, "true");
+            playAlarmSound(0.85, alarms.soundType || "tymvera_obsidian");
+            setActiveAlarm({
+              type: "wake",
+              time: alarms.wake.time,
+              title: "🌅 Wake-Up Alarm",
+              subtitle: `First scheduled task begins at ${to12h(alarms.wake.time)}`,
+            });
+          }
         }
       }
 
-      // Check Sleep Alarm
-      if (alarms.sleep.enabled && currentHHMM === alarms.sleep.time) {
-        const sleepKey = `alarm_sleep_triggered_${ds}`;
-        if (!sessionStorage.getItem(sleepKey) && !activeAlarm) {
-          sessionStorage.setItem(sleepKey, "true");
-          playAlarmSound(0.75);
-          setActiveAlarm({
-            type: "sleep",
-            time: alarms.sleep.time,
-            title: "🌙 Bedtime / Sleep Alarm",
-            subtitle: `Final schedule ended at ${to12h(alarms.sleep.time)}. Rest up!`,
-          });
+      // Check Sleep Alarm with 2-minute grace window
+      if (alarms.sleep && alarms.sleep.enabled && alarms.sleep.time) {
+        const [sh, sm] = alarms.sleep.time.split(":").map(Number);
+        const sleepTotalMins = sh * 60 + (sm || 0);
+        const diff = currentTotalMins - sleepTotalMins;
+
+        if (diff >= 0 && diff <= 2) {
+          const sleepKey = `alarm_sleep_triggered_${ds}_${alarms.sleep.time}`;
+          if (!sessionStorage.getItem(sleepKey) && !activeAlarm) {
+            sessionStorage.setItem(sleepKey, "true");
+            playAlarmSound(0.75, alarms.soundType || "tymvera_obsidian");
+            setActiveAlarm({
+              type: "sleep",
+              time: alarms.sleep.time,
+              title: "🌙 Bedtime / Sleep Alarm",
+              subtitle: `Final schedule ended at ${to12h(alarms.sleep.time)}. Rest up!`,
+            });
+          }
         }
       }
     }, 1000);
@@ -1577,6 +1610,60 @@ function TYMVERA() {
       return 0;
     }
   }, [history]);
+
+  // Today Focus Stats & Story Card Unlock Verification
+  const todayFocusMins = useMemo(() => {
+    let total = 0;
+    selBlocks.forEach((b) => {
+      if (!b || b.zeroXp) return;
+      const p = selProg[b.id];
+      if (!p) return;
+      if (p.status === "completed") {
+        total += mins(b.start, b.end);
+      } else if (p.status === "partial") {
+        total += (p.actualMins || 0);
+      }
+    });
+    return total;
+  }, [selBlocks, selProg]);
+
+  const doneCount = useMemo(() => {
+    return selBlocks.filter((b) => b && selProg[b.id]?.status === "completed").length;
+  }, [selBlocks, selProg]);
+
+  const tier1Stats = useMemo(() => {
+    const t1 = selBlocks.filter((b) => b && (b.prio === 1 || b.priority === 1));
+    const t1Done = t1.filter((b) => selProg[b.id]?.status === "completed").length;
+    return { done: t1Done, total: t1.length };
+  }, [selBlocks, selProg]);
+
+  const isCardUnlocked = useMemo(() => {
+    return isToday && isDailyCardUnlocked(todayFocusMins, doneCount);
+  }, [isToday, todayFocusMins, doneCount]);
+
+  const handleOpenShareCard = useCallback(async () => {
+    if (!isCardUnlocked) return;
+    setIsGeneratingCard(true);
+    setShowShareCardModal(true);
+    try {
+      const res = await renderDailyFocusCard({
+        dateStr: new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
+        focusMins: todayFocusMins,
+        score,
+        streak,
+        doneCount,
+        totalCount: selBlocks.length,
+        tier1Done: tier1Stats.done,
+        tier1Total: tier1Stats.total,
+      });
+      setShareCardPreview(res);
+    } catch (err) {
+      console.error("Card generation error:", err);
+      handleAddToast({ id: Date.now(), title: "Generation Failed", message: "Could not create daily story card.", type: "error" });
+    } finally {
+      setIsGeneratingCard(false);
+    }
+  }, [isCardUnlocked, todayFocusMins, score, streak, doneCount, selBlocks.length, tier1Stats, handleAddToast]);
 
   const allLogs = useMemo(() => {
     return Object.values(history || {})
@@ -1887,7 +1974,7 @@ function TYMVERA() {
     const snoozeTime = d.toTimeString().slice(0, 5);
 
     setTimeout(() => {
-      playAlarmSound(0.85);
+      playAlarmSound(0.85, alarms.soundType || "tymvera_obsidian");
       setActiveAlarm({
         type: "snooze",
         time: snoozeTime,
@@ -2314,6 +2401,119 @@ function TYMVERA() {
           >
             <Icon name="system_update_alt" size={18} /> Restore & Merge Data
           </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── RENDER: DAILY FOCUS STORY CARD MODAL (Viral Social Loop) ───────────────
+  const renderShareCardModal = () => {
+    if (!showShareCardModal) return null;
+
+    const handleShare = async () => {
+      if (!shareCardPreview) return;
+      try {
+        const res = await shareOrDownloadDailyCard(shareCardPreview);
+        if (res.shared) {
+          if (res.method === "download") {
+            handleAddToast({
+              id: Date.now(),
+              title: "Downloaded!",
+              message: "Story card saved to your gallery. Upload to WhatsApp / Instagram!",
+              type: "success",
+            });
+          } else {
+            handleAddToast({
+              id: Date.now(),
+              title: "Shared!",
+              message: "Daily Focus Card shared successfully!",
+              type: "success",
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Share error:", err);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 z-[3600] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 select-none animate-in fade-in duration-200">
+        <div
+          className={`${themeColors.surface} border ${themeColors.border} w-full max-w-[420px] max-h-[92vh] flex flex-col rounded-[32px] p-5 sm:p-6 shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden`}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between mb-3 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+                <Icon name="bolt" size={18} />
+              </div>
+              <div>
+                <div className="text-base font-black text-gray-900 dark:text-white leading-tight">
+                  Daily Focus Story Card
+                </div>
+                <div className="text-[10px] font-mono text-emerald-500 dark:text-emerald-400 font-bold">
+                  ● Verified Study Session
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowShareCardModal(false)}
+              className="p-1.5 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <Icon name="close" size={20} />
+            </button>
+          </div>
+
+          {/* Card Preview Container */}
+          <div className="relative flex-1 min-h-[320px] max-h-[460px] my-2 rounded-2xl overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center p-2">
+            {isGeneratingCard ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-12 text-gray-400">
+                <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-mono font-medium">Generating HD 9:16 Story Card...</span>
+              </div>
+            ) : shareCardPreview ? (
+              <img
+                src={shareCardPreview.dataUrl}
+                alt="TYMVERA Daily Focus Card"
+                className="max-h-full max-w-full object-contain rounded-xl shadow-2xl"
+              />
+            ) : (
+              <div className="text-xs text-gray-400">Unable to load card preview.</div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2.5 mt-3 pt-2 border-t border-gray-100 dark:border-[#222] shrink-0">
+            <button
+              onClick={handleShare}
+              disabled={isGeneratingCard || !shareCardPreview}
+              className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-95 transition-all"
+            >
+              <Icon name="share" size={16} />
+              <span>Share to Stories / WhatsApp</span>
+            </button>
+            <button
+              onClick={() => {
+                if (shareCardPreview) {
+                  shareOrDownloadDailyCard({ ...shareCardPreview, filename: `tymvera-${selDate}.png` });
+                  handleAddToast({
+                    id: Date.now(),
+                    title: "Downloaded!",
+                    message: "Story card saved to gallery.",
+                    type: "success",
+                  });
+                }
+              }}
+              disabled={isGeneratingCard || !shareCardPreview}
+              className="py-3 px-3.5 rounded-2xl bg-gray-100 dark:bg-[#1a1a1a] hover:bg-gray-200 dark:hover:bg-[#252525] border border-gray-200 dark:border-[#2a2a2a] text-gray-800 dark:text-gray-200 text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-all"
+              title="Download PNG to gallery"
+            >
+              <Icon name="download" size={16} />
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-400 text-center mt-2 font-mono">
+            Optimized for Instagram Stories, WhatsApp Status & Snapchat (9:16 HD)
+          </p>
         </div>
       </div>
     );
@@ -3203,11 +3403,36 @@ function TYMVERA() {
               <div className="text-xs font-bold text-gray-500 mt-1">
                 {done} of {selBlocks.length} completed {partial > 0 ? `(${partial} logged)` : ""}
               </div>
-              <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-[#222]">
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-[#222] flex-wrap gap-2">
                 <div className="flex items-center gap-1 text-xs font-mono font-bold text-amber-500">
                   <Icon name="local_fire_department" size={16} />
                   <span>{streak} Day Streak</span>
                 </div>
+
+                {/* Limited Daily Focus Card - Only unlocked when user actually studies (30m+ or 1+ session done) */}
+                {isToday && (
+                  <div>
+                    {isCardUnlocked ? (
+                      <button
+                        onClick={handleOpenShareCard}
+                        className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-indigo-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/25 active:scale-95 transition-all group"
+                        title="Share your verified daily focus summary to Instagram Story / WhatsApp Status"
+                      >
+                        <Icon name="share" size={13} className="text-white group-hover:rotate-12 transition-transform" />
+                        <span>Daily Focus Card</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+                      </button>
+                    ) : (
+                      <div
+                        className="text-[11px] font-mono text-gray-400 dark:text-gray-500 flex items-center gap-1.5 bg-gray-100/80 dark:bg-[#151515] px-2.5 py-1 rounded-lg border border-gray-200 dark:border-[#262626]"
+                        title="Locked: Log at least 30 mins of focus or complete 1 session today to unlock your Daily Focus Card"
+                      >
+                        <Icon name="lock" size={12} className="text-gray-400" />
+                        <span>Daily Card: {todayFocusMins}/30m</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3888,18 +4113,51 @@ function TYMVERA() {
             )}
           </div>
 
-          {/* Test Alarm Sound */}
-          <div className="p-4 bg-gray-50/50 dark:bg-[#181818]/50 flex justify-between items-center">
-            <span className="text-xs font-bold text-gray-500">Audio Synth Melody</span>
-            <button
-              onClick={() => {
-                playAlarmSound(0.8);
-                setTimeout(stopAlarmSound, 3000);
-              }}
-              className="text-xs font-black text-blue-500 flex items-center gap-1.5 hover:underline"
-            >
-              <Icon name="volume_up" size={16} /> Test Alarm Sound (3s)
-            </button>
+          {/* Alarm Acoustic Theme Selector */}
+          <div className="p-4 border-t border-gray-100 dark:border-[#222]">
+            <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-2">
+              Alarm Acoustic Theme
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+              {ALARM_SOUND_TYPES.map((tone) => (
+                <button
+                  key={tone.id}
+                  type="button"
+                  onClick={() => {
+                    const updated = { ...alarms, soundType: tone.id };
+                    setAlarms(updated);
+                    playAlarmSound(0.85, tone.id);
+                    setTimeout(stopAlarmSound, 2500);
+                  }}
+                  className={`px-3 py-2 rounded-xl text-xs font-bold text-left transition-all flex items-center justify-between border ${
+                    (alarms.soundType || "tymvera_obsidian") === tone.id
+                      ? "bg-blue-500/10 border-blue-500 text-blue-500 shadow-sm"
+                      : "bg-gray-100 dark:bg-[#222] border-transparent text-gray-600 dark:text-gray-300"
+                  }`}
+                >
+                  <span className="truncate">{tone.name}</span>
+                  {(alarms.soundType || "tymvera_obsidian") === tone.id && (
+                    <Icon name="check" size={16} className="text-blue-500 shrink-0 ml-1" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
+              <span className="text-[11px] font-bold text-gray-500">
+                100% Offline Synthesizer • Zero Delay
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  playAlarmSound(0.85, alarms.soundType || "tymvera_obsidian");
+                  setTimeout(stopAlarmSound, 3000);
+                }}
+                className="text-xs font-black text-blue-500 flex items-center gap-1.5 hover:underline"
+              >
+                <Icon name="volume_up" size={16} /> Test Alarm (3s)
+              </button>
+            </div>
           </div>
         </div>
 
@@ -3922,13 +4180,12 @@ function TYMVERA() {
             <button
               onClick={async () => {
                 if (!notificationConfig.enabled) {
-                  if ("Notification" in window) {
-                    const perm = await Notification.requestPermission();
-                    if (perm !== "granted") {
-                      alert("Please enable notification permissions in browser settings.");
-                    }
+                  const granted = await requestNotificationPermission();
+                  if (!granted && typeof window !== "undefined" && "Notification" in window && Notification.permission === "denied") {
+                    alert("Please enable notification permissions in your browser or device settings.");
                   }
                   setNotificationConfig({ ...notificationConfig, enabled: true });
+                  playNotificationChime();
                 } else {
                   setNotificationConfig({ ...notificationConfig, enabled: false });
                 }
@@ -4009,19 +4266,29 @@ function TYMVERA() {
 
           {/* Test Notification Button */}
           <div className="p-4 bg-gray-50/50 dark:bg-[#181818]/50 flex justify-between items-center">
-            <span className="text-xs font-bold text-gray-500">Preview Alerts</span>
-            <button
-              onClick={() => {
-                dispatchNotification({
-                  title: "⚡ Test Notification (0:00 Instant)",
-                  body: "Schedule transitions and alarms are operating at peak precision.",
-                  onInAppToast: setInAppToast,
-                });
-              }}
-              className="text-xs font-black text-blue-500 flex items-center gap-1.5 hover:underline"
-            >
-              <Icon name="send" size={16} /> Send Test Alert Now
-            </button>
+            <span className="text-xs font-bold text-gray-500">TYMVERA Sound & Alert Preview</span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => playNotificationChime()}
+                className="text-xs font-black text-gray-600 dark:text-gray-300 flex items-center gap-1 hover:underline"
+              >
+                <Icon name="music_note" size={16} /> Play Chime
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  dispatchNotification({
+                    title: "⚡ TYMVERA Milestone Alert",
+                    body: "Schedule transitions and alarms are operating with obsidian precision.",
+                    onInAppToast: setInAppToast,
+                  });
+                }}
+                className="text-xs font-black text-blue-500 flex items-center gap-1.5 hover:underline"
+              >
+                <Icon name="send" size={16} /> Test Alert
+              </button>
+            </div>
           </div>
         </div>
 
@@ -4442,6 +4709,7 @@ function TYMVERA() {
           {renderAlarmModal()}
           {renderFirebaseModal()}
           {renderBackupModal()}
+          {renderShareCardModal()}
           {renderStorageInspectorModal()}
           {renderAddTaskGraphModal()}
           {editingPreset && renderPresetEditor()}

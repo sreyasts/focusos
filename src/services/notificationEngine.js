@@ -1,10 +1,11 @@
 /**
  * TYMVERA Precision Notification Engine
  * Features:
- * - Customizable lead time (0 min for instant/exact time, 1m, 2m, 5m, 10m, etc.)
- * - Start & End milestone alerts for every scheduled task
- * - Instant schedule handover detection (e.g. at 09:00 when Task A ends and Task B starts)
- * - Dual dispatch: Native Browser Notifications + In-App Interactive Toast + Audio Chime
+ * - Robust Android PWA & Desktop Notification Dispatch via ServiceWorkerRegistration.showNotification
+ * - Resilient Grace-Window Triggering (eliminates dropped alerts caused by phone sleep / timer throttling)
+ * - Customizable Lead Time (0 min for instant/exact time, 1m, 2m, 5m, etc.)
+ * - Start & End Milestone Alerts + Instant Schedule Handover Detection
+ * - Synchronized Signature TYMVERA Obsidian Glass Chime + Tactile Vibration
  */
 
 import { playNotificationChime } from './alarmEngine';
@@ -17,13 +18,35 @@ const format12hTime = (t) => {
 };
 
 /**
- * Dispatch a notification via Browser API and in-app toast callback
+ * Safely request native notification permissions across desktop & mobile
  */
-export function dispatchNotification({ title, body, icon = '/icon.png', onInAppToast }) {
-  // 1. Play chime if sound is permitted
+export async function requestNotificationPermission() {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return false;
+  }
+  try {
+    const perm = await Notification.requestPermission();
+    return perm === 'granted';
+  } catch (err) {
+    console.warn('[NotificationEngine] Permission request failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Dispatch a notification via Service Worker / Browser API, in-app toast, and signature chime
+ */
+export function dispatchNotification({
+  title,
+  body,
+  icon = '/icon-192.png',
+  badge = '/icon-192.png',
+  onInAppToast,
+}) {
+  // 1. Play signature TYMVERA focus chime
   playNotificationChime();
 
-  // 2. Dispatch in-app toast for instant visual feedback
+  // 2. Dispatch in-app interactive toast for instant visual feedback
   if (typeof onInAppToast === 'function') {
     onInAppToast({
       id: `toast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -33,39 +56,52 @@ export function dispatchNotification({ title, body, icon = '/icon.png', onInAppT
     });
   }
 
-  // 3. Dispatch native browser / PWA notification if permission is granted
+  // 3. Dispatch native browser / Android PWA notification if permission is granted
   if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
     const options = {
       body,
       icon,
-      badge: icon,
-      vibrate: [200, 100, 200],
-      tag: title,
+      badge,
+      vibrate: [120, 60, 120],
+      tag: `tymvera_notif_${Date.now()}`,
       renotify: true,
+      silent: false,
+      data: { url: '/' },
     };
 
-    try {
-      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.ready
-          .then((reg) => reg.showNotification(title, options))
-          .catch(() => new Notification(title, options));
-      } else {
+    // On Android PWA / Chrome, new Notification() throws 'Illegal constructor'.
+    // Must use navigator.serviceWorker.ready.then(reg => reg.showNotification())
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((reg) => {
+          return reg.showNotification(title, options);
+        })
+        .catch((err) => {
+          console.warn('[NotificationEngine] ServiceWorker showNotification fallback:', err);
+          try {
+            new Notification(title, options);
+          } catch (e) {
+            // Suppress unsupported constructor error on Android
+          }
+        });
+    } else {
+      try {
         new Notification(title, options);
+      } catch (e) {
+        console.warn('[NotificationEngine] Native Notification error:', e);
       }
-    } catch (err) {
-      console.warn('Native notification dispatch failed:', err);
     }
   }
 }
 
 /**
- * Check schedule for notification triggers at the current minute
+ * Check schedule for notification triggers with grace-window tolerance for background tab sleep
  */
 export function checkScheduleNotifications({
   todaysBlocks = [],
   config = {
     enabled: true,
-    leadMins: 5,
+    leadMins: 0,
     notifyStart: true,
     notifyEnd: true,
     sound: true,
@@ -77,12 +113,8 @@ export function checkScheduleNotifications({
 
   const now = new Date();
   const currentTotalMins = now.getHours() * 60 + now.getMinutes();
-  const currentSeconds = now.getSeconds();
-
-  // Only evaluate within the first 25 seconds of each minute to prevent duplicate checks
   const lead = Number(config.leadMins) || 0;
 
-  // Track ending and starting tasks in this exact check
   const endingTasks = [];
   const startingTasks = [];
 
@@ -94,14 +126,17 @@ export function checkScheduleNotifications({
 
     const [eh, em] = block.end.split(':').map(Number);
     let endMins = eh * 60 + (em || 0);
-    // If end is next day or cross-midnight, adjust
+    // If block spans midnight
     if (endMins <= startMins) endMins += 24 * 60;
 
-    // Check Start milestone
+    // ─── START MILESTONE EVALUATION (with 3-minute grace window) ───────────
     if (config.notifyStart) {
       const targetStartMins = startMins - lead;
-      if (currentTotalMins === targetStartMins) {
-        const cacheKey = `notif_start_${dateStr}_${block.id}_lead${lead}`;
+      const startDiff = currentTotalMins - targetStartMins;
+
+      // Fires if current time is within [0, 3] minutes of target time
+      if (startDiff >= 0 && startDiff <= 3) {
+        const cacheKey = `notif_start_${dateStr}_${block.id}_${targetStartMins}`;
         if (!sessionStorage.getItem(cacheKey)) {
           sessionStorage.setItem(cacheKey, 'true');
           startingTasks.push(block);
@@ -109,15 +144,13 @@ export function checkScheduleNotifications({
       }
     }
 
-    // Check End milestone
+    // ─── END MILESTONE EVALUATION (with 3-minute grace window) ─────────────
     if (config.notifyEnd) {
-      // For lead time on end: if lead is 0, notify at exact end.
-      // If lead > 0, also support notifying right when task ends or lead mins before
-      const targetEndMins = endMins - (lead === 0 ? 0 : 0); // User specifically asked for task ending notification at exact end or lead
-      const checkMins = lead === 0 ? endMins : endMins - lead;
+      const targetEndMins = endMins;
+      const endDiff = currentTotalMins - targetEndMins;
 
-      if (currentTotalMins === checkMins || (lead > 0 && currentTotalMins === endMins)) {
-        const cacheKey = `notif_end_${dateStr}_${block.id}_m${currentTotalMins}`;
+      if (endDiff >= 0 && endDiff <= 3) {
+        const cacheKey = `notif_end_${dateStr}_${block.id}_${targetEndMins}`;
         if (!sessionStorage.getItem(cacheKey)) {
           sessionStorage.setItem(cacheKey, 'true');
           endingTasks.push(block);
@@ -126,7 +159,7 @@ export function checkScheduleNotifications({
     }
   });
 
-  // Check for simultaneous Handover (e.g. Task A ending at 9:00 and Task B starting at 9:00)
+  // Handover: when one task ends right as another starts
   if (endingTasks.length > 0 && startingTasks.length > 0) {
     const endingNames = endingTasks.map((b) => b.name).join(', ');
     const startingNames = startingTasks.map((b) => b.name).join(', ');
