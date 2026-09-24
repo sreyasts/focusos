@@ -13,13 +13,14 @@ import {
   calculateAutoWakeTime,
   calculateAutoSleepTime,
   initAudioContextUnlocker,
-  ALARM_SOUND_TYPES,
+  startAudioKeepAlive,
 } from "./services/alarmEngine";
 
 import {
   checkScheduleNotifications,
   dispatchNotification,
   requestNotificationPermission,
+  dispatchAlarmNativeNotification,
 } from "./services/notificationEngine";
 
 import {
@@ -887,11 +888,10 @@ function TYMVERA() {
   const [presets, setPresets] = useState([]);
   const [themeMode, setThemeMode] = useState("system");
 
-  // Alarms State
+  // Alarms State (Single Signature Obsidian Beacon Sound)
   const [alarms, setAlarms] = useState({
     wake: { enabled: false, time: "05:00", autoSync: true },
     sleep: { enabled: false, time: "22:00", autoSync: true },
-    soundType: "tymvera_obsidian",
   });
   const [activeAlarm, setActiveAlarm] = useState(null);
 
@@ -959,6 +959,18 @@ function TYMVERA() {
   // ─── INITIAL BOOT & STORAGE LOADING ─────────────────────────────────────────
   useEffect(() => {
     document.title = "TYMVERA";
+    initAudioContextUnlocker();
+    startAudioKeepAlive();
+
+    const handleVisChange = () => {
+      if (document.visibilityState === "visible") {
+        startAudioKeepAlive();
+        setNow(new Date());
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisChange);
+    window.addEventListener("focus", handleVisChange);
+
     let twLoaded = false;
     let dbLoaded = false;
 
@@ -1007,11 +1019,7 @@ function TYMVERA() {
         const savedAlarms = await idbGet("fo6_alarms", {
           wake: { enabled: false, time: "05:00", autoSync: true },
           sleep: { enabled: false, time: "22:00", autoSync: true },
-          soundType: "tymvera_obsidian",
         });
-        if (savedAlarms && !savedAlarms.soundType) {
-          savedAlarms.soundType = "tymvera_obsidian";
-        }
         const savedNotif = await idbGet("fo6_notif_config", {
           enabled: false,
           leadMins: 0,
@@ -1146,6 +1154,10 @@ function TYMVERA() {
       }
     }
     loadData();
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisChange);
+      window.removeEventListener("focus", handleVisChange);
+    };
   }, [handleAddToast]);
 
   // ─── RECONCILE CLOUD & LOCAL DATA NON-DESTRUCTIVELY ────────────────────────
@@ -1407,13 +1419,15 @@ function TYMVERA() {
           const wakeKey = `alarm_wake_triggered_${ds}_${alarms.wake.time}`;
           if (!sessionStorage.getItem(wakeKey) && !activeAlarm) {
             sessionStorage.setItem(wakeKey, "true");
-            playAlarmSound(0.85, alarms.soundType || "tymvera_obsidian");
-            setActiveAlarm({
+            playAlarmSound(1.0);
+            const alarmData = {
               type: "wake",
               time: alarms.wake.time,
               title: "🌅 Wake-Up Alarm",
               subtitle: `First scheduled task begins at ${to12h(alarms.wake.time)}`,
-            });
+            };
+            setActiveAlarm(alarmData);
+            dispatchAlarmNativeNotification(alarmData);
           }
         }
       }
@@ -1428,13 +1442,15 @@ function TYMVERA() {
           const sleepKey = `alarm_sleep_triggered_${ds}_${alarms.sleep.time}`;
           if (!sessionStorage.getItem(sleepKey) && !activeAlarm) {
             sessionStorage.setItem(sleepKey, "true");
-            playAlarmSound(0.75, alarms.soundType || "tymvera_obsidian");
-            setActiveAlarm({
+            playAlarmSound(0.95);
+            const alarmData = {
               type: "sleep",
               time: alarms.sleep.time,
               title: "🌙 Bedtime / Sleep Alarm",
               subtitle: `Final schedule ended at ${to12h(alarms.sleep.time)}. Rest up!`,
-            });
+            };
+            setActiveAlarm(alarmData);
+            dispatchAlarmNativeNotification(alarmData);
           }
         }
       }
@@ -1974,7 +1990,7 @@ function TYMVERA() {
     const snoozeTime = d.toTimeString().slice(0, 5);
 
     setTimeout(() => {
-      playAlarmSound(0.85, alarms.soundType || "tymvera_obsidian");
+      playAlarmSound(1.0);
       setActiveAlarm({
         type: "snooze",
         time: snoozeTime,
@@ -3993,12 +4009,17 @@ function TYMVERA() {
               </div>
 
               <button
-                onClick={() =>
+                onClick={() => {
+                  const willEnable = !alarms.wake.enabled;
+                  if (willEnable) {
+                    requestNotificationPermission();
+                    startAudioKeepAlive();
+                  }
                   setAlarms({
                     ...alarms,
-                    wake: { ...alarms.wake, enabled: !alarms.wake.enabled },
-                  })
-                }
+                    wake: { ...alarms.wake, enabled: willEnable },
+                  });
+                }}
                 className={`w-14 h-8 rounded-full transition-colors relative shadow-inner ${
                   alarms.wake.enabled ? "bg-[#32D74B]" : "bg-gray-200 dark:bg-[#333]"
                 }`}
@@ -4032,12 +4053,14 @@ function TYMVERA() {
                   <input
                     type="time"
                     value={alarms.wake.time}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const val = e.target.value;
                       setAlarms({
                         ...alarms,
-                        wake: { ...alarms.wake, time: e.target.value },
-                      })
-                    }
+                        wake: { ...alarms.wake, time: val },
+                      });
+                      sessionStorage.removeItem(`alarm_wake_triggered_${todayStr()}_${val}`);
+                    }}
                     className="text-xs font-black p-1.5 rounded-lg bg-gray-100 dark:bg-[#222] border-none outline-none"
                   />
                 )}
@@ -4061,12 +4084,17 @@ function TYMVERA() {
               </div>
 
               <button
-                onClick={() =>
+                onClick={() => {
+                  const willEnable = !alarms.sleep.enabled;
+                  if (willEnable) {
+                    requestNotificationPermission();
+                    startAudioKeepAlive();
+                  }
                   setAlarms({
                     ...alarms,
-                    sleep: { ...alarms.sleep, enabled: !alarms.sleep.enabled },
-                  })
-                }
+                    sleep: { ...alarms.sleep, enabled: willEnable },
+                  });
+                }}
                 className={`w-14 h-8 rounded-full transition-colors relative shadow-inner ${
                   alarms.sleep.enabled ? "bg-[#32D74B]" : "bg-gray-200 dark:bg-[#333]"
                 }`}
@@ -4100,12 +4128,14 @@ function TYMVERA() {
                   <input
                     type="time"
                     value={alarms.sleep.time}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const val = e.target.value;
                       setAlarms({
                         ...alarms,
-                        sleep: { ...alarms.sleep, time: e.target.value },
-                      })
-                    }
+                        sleep: { ...alarms.sleep, time: val },
+                      });
+                      sessionStorage.removeItem(`alarm_sleep_triggered_${todayStr()}_${val}`);
+                    }}
                     className="text-xs font-black p-1.5 rounded-lg bg-gray-100 dark:bg-[#222] border-none outline-none"
                   />
                 )}
@@ -4113,47 +4143,30 @@ function TYMVERA() {
             )}
           </div>
 
-          {/* Alarm Acoustic Theme Selector */}
-          <div className="p-4 border-t border-gray-100 dark:border-[#222]">
-            <label className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-2">
-              Alarm Acoustic Theme
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-              {ALARM_SOUND_TYPES.map((tone) => (
-                <button
-                  key={tone.id}
-                  type="button"
-                  onClick={() => {
-                    const updated = { ...alarms, soundType: tone.id };
-                    setAlarms(updated);
-                    playAlarmSound(0.85, tone.id);
-                    setTimeout(stopAlarmSound, 2500);
-                  }}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold text-left transition-all flex items-center justify-between border ${
-                    (alarms.soundType || "tymvera_obsidian") === tone.id
-                      ? "bg-blue-500/10 border-blue-500 text-blue-500 shadow-sm"
-                      : "bg-gray-100 dark:bg-[#222] border-transparent text-gray-600 dark:text-gray-300"
-                  }`}
-                >
-                  <span className="truncate">{tone.name}</span>
-                  {(alarms.soundType || "tymvera_obsidian") === tone.id && (
-                    <Icon name="check" size={16} className="text-blue-500 shrink-0 ml-1" />
-                  )}
-                </button>
-              ))}
-            </div>
+          {/* Unified Signature Alarm Sound Banner & Test */}
+          <div className="p-5 border-t border-gray-100 dark:border-[#222] bg-gradient-to-b from-transparent to-blue-500/5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
+                  <Icon name="graphic_eq" size={18} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-gray-900 dark:text-white">
+                    Obsidian Beacon (Signature Alarm)
+                  </div>
+                  <div className="text-[10px] font-mono text-gray-500">
+                    Loud dual beacon + sub-bass kick • Calibrated for mobile speakers
+                  </div>
+                </div>
+              </div>
 
-            <div className="flex justify-between items-center pt-2">
-              <span className="text-[11px] font-bold text-gray-500">
-                100% Offline Synthesizer • Zero Delay
-              </span>
               <button
                 type="button"
                 onClick={() => {
-                  playAlarmSound(0.85, alarms.soundType || "tymvera_obsidian");
-                  setTimeout(stopAlarmSound, 3000);
+                  playAlarmSound(1.0);
+                  setTimeout(stopAlarmSound, 3500);
                 }}
-                className="text-xs font-black text-blue-500 flex items-center gap-1.5 hover:underline"
+                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-blue-500/25 active:scale-95 transition-all shrink-0"
               >
                 <Icon name="volume_up" size={16} /> Test Alarm (3s)
               </button>

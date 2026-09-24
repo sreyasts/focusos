@@ -1,42 +1,50 @@
 /**
- * TYMVERA System Alarm & Acoustic Engine
+ * TYMVERA Signature Alarm & Acoustic Engine
  * Features:
- * - Signature "TYMVERA Obsidian Resonance" audio synthesizer (deep ambient sub-harmonic FM chime)
- * - Persistent AudioContext singleton with automatic gesture unlocker (resolves mobile/browser autoplay blocks)
- * - Zero external MP3 dependencies — 100% offline Web Audio API synthesis
- * - Screen Wake Lock support during ringing
- * - Synchronized tactile vibration cadence
- * - Auto-sync calculation of wake-up and sleep milestones
- * - Loop management with Snooze (+5m) and Dismiss
+ * - Single Flagship Sound: "TYMVERA Obsidian Beacon" — loud, crisp, punchy, high-urgency acoustic synthesizer
+ * - Dynamics compressor limiter node for maximum perceived loudness without distortion on mobile speakers
+ * - Silent Audio Keep-Alive carrier to prevent mobile browser / PWA timer throttling during screen sleep
+ * - Screen Wake Lock support during active alarm ringing
+ * - Synchronized tactile vibration pattern
+ * - Universal AudioContext unlocker on first user touch/click/interaction
  */
 
 let activeAudioCtx = null;
+let activeCompressor = null;
 let activeAlarmInterval = null;
 let activeWakeLock = null;
 let activeOscillators = [];
-
-// Available Alarm Tones (flagship Obsidian theme is default)
-export const ALARM_SOUND_TYPES = [
-  { id: 'tymvera_obsidian', name: 'Obsidian Resonance 🌌 (TYMVERA Signature)' },
-  { id: 'gentle_marimba', name: 'Gentle Focus Marimba 🎵' },
-  { id: 'clock_chime', name: 'Harmonic Pulse Bell 🔔' },
-  { id: 'system_digital', name: 'Digital Precision ⏰' },
-  { id: 'android_siren', name: 'Urgent Wake-Up Siren 🚨' },
-];
+let keepAliveOsc = null;
+let keepAliveGain = null;
 
 /**
- * Returns or creates the persistent AudioContext singleton.
- * Keeping one alive avoids browser autoplay blocks from timer intervals.
+ * Returns or creates the persistent AudioContext with dynamic broadcast limiter
  */
 export function getAudioContext() {
   try {
     if (typeof window === 'undefined') return null;
+
     if (!activeAudioCtx || activeAudioCtx.state === 'closed') {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (AudioContextClass) {
         activeAudioCtx = new AudioContextClass();
+
+        // Dynamics Compressor acts as a broadcast limiter:
+        // Maximizes loudness and punches up transients while preventing speaker clipping
+        activeCompressor = activeAudioCtx.createDynamicsCompressor();
+        activeCompressor.threshold.setValueAtTime(-16, activeAudioCtx.currentTime);
+        activeCompressor.knee.setValueAtTime(6, activeAudioCtx.currentTime);
+        activeCompressor.ratio.setValueAtTime(10, activeAudioCtx.currentTime);
+        activeCompressor.attack.setValueAtTime(0.003, activeAudioCtx.currentTime);
+        activeCompressor.release.setValueAtTime(0.12, activeAudioCtx.currentTime);
+        activeCompressor.connect(activeAudioCtx.destination);
       }
     }
+
+    if (activeAudioCtx && activeAudioCtx.state === 'suspended') {
+      activeAudioCtx.resume().catch(() => {});
+    }
+
     return activeAudioCtx;
   } catch (err) {
     console.warn('[AlarmEngine] Failed to create AudioContext:', err);
@@ -45,9 +53,46 @@ export function getAudioContext() {
 }
 
 /**
+ * Master output destination (routed through compressor limiter)
+ */
+function getMasterDestination(ctx) {
+  return activeCompressor || ctx.destination;
+}
+
+/**
+ * Starts an inaudible audio carrier to keep the mobile browser's audio session active.
+ * This signals the mobile OS (iOS & Android) that the app is an active media session,
+ * which prevents the browser power manager from freezing timer threads when locked.
+ */
+export function startAudioKeepAlive() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    if (!keepAliveOsc) {
+      keepAliveOsc = ctx.createOscillator();
+      keepAliveGain = ctx.createGain();
+
+      // Completely inaudible amplitude (0.00002) at 35Hz
+      keepAliveGain.gain.setValueAtTime(0.00002, ctx.currentTime);
+      keepAliveOsc.frequency.setValueAtTime(35, ctx.currentTime);
+
+      keepAliveOsc.connect(keepAliveGain);
+      keepAliveGain.connect(ctx.destination);
+      keepAliveOsc.start();
+    }
+  } catch (e) {
+    // Keep-alive is best-effort
+  }
+}
+
+/**
  * Global unlocker attached to user interactions (touch, click, keydown).
- * Ensures the AudioContext is warm and running so scheduled alarms / notifications
- * can emit sound without being muted by browser autoplay policies.
+ * Primes the audio context and launches keep-alive carrier immediately.
  */
 export function initAudioContextUnlocker() {
   if (typeof window === 'undefined') return;
@@ -57,6 +102,7 @@ export function initAudioContextUnlocker() {
     if (ctx && ctx.state === 'suspended') {
       ctx.resume().catch(() => {});
     }
+    startAudioKeepAlive();
   };
 
   const events = ['pointerdown', 'touchstart', 'touchend', 'click', 'keydown'];
@@ -66,7 +112,7 @@ export function initAudioContextUnlocker() {
 }
 
 /**
- * Screen Wake Lock during active ringing so phone screens stay awake
+ * Request Screen Wake Lock during active ringing so smartphone displays remain on
  */
 async function acquireWakeLock() {
   try {
@@ -86,7 +132,7 @@ function releaseWakeLock() {
 }
 
 /**
- * Stop active sound synthesis and clear interval
+ * Stop active ringing alarm and release wake lock
  */
 export function stopAlarmSound() {
   if (activeAlarmInterval) {
@@ -94,16 +140,14 @@ export function stopAlarmSound() {
     activeAlarmInterval = null;
   }
 
-  // Gracefully stop all current running oscillators
-  activeOscillators.forEach((osc) => {
+  activeOscillators.forEach((node) => {
     try {
-      osc.stop();
-      osc.disconnect();
+      node.stop();
+      node.disconnect();
     } catch {}
   });
   activeOscillators = [];
 
-  // Do NOT close activeAudioCtx completely to preserve user gesture authorization!
   releaseWakeLock();
 
   if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -112,11 +156,18 @@ export function stopAlarmSound() {
 }
 
 /**
- * Plays the signature TYMVERA Obsidian sound or selected tone in a loop
+ * TYMVERA Signature Obsidian Beacon Alarm
+ * Loud, cutting, high-urgency acoustic synthesizer tailored to the dark obsidian theme.
+ * Features:
+ * - Sub-bass kick transient (140Hz -> 45Hz) for physical chest thump
+ * - High-energy resonant dual beacon (1046.5Hz C6 + 1567.98Hz G6) with harmonic overtone (2093Hz C7 + 2637Hz E7)
+ * - Rhythmic double-strike cadence (PULSE-PULSE ... PULSE-PULSE) repeating every 0.95s
+ * - Max volume routed through dynamics compressor limiter
  */
-export function playAlarmSound(volume = 0.85, soundType = 'tymvera_obsidian') {
+export function playAlarmSound(volume = 1.0) {
   stopAlarmSound();
   acquireWakeLock();
+  startAudioKeepAlive();
 
   try {
     const ctx = getAudioContext();
@@ -126,6 +177,8 @@ export function playAlarmSound(volume = 0.85, soundType = 'tymvera_obsidian') {
       ctx.resume().catch(() => {});
     }
 
+    const dest = getMasterDestination(ctx);
+
     const playCycle = () => {
       if (!ctx || ctx.state === 'closed') return;
       if (ctx.state === 'suspended') {
@@ -133,210 +186,98 @@ export function playAlarmSound(volume = 0.85, soundType = 'tymvera_obsidian') {
       }
 
       const now = ctx.currentTime;
+      const vol = Math.min(1.0, Math.max(0.2, volume));
 
-      // ─── 1. SIGNATURE TYMVERA OBSIDIAN RESONANCE ───────────────────────────
-      if (soundType === 'tymvera_obsidian') {
-        // Multi-layered deep ambient harmonic synthesizer:
-        // Warm fundamental bass (110Hz A2) + shimmering harmonic triad (A3, E4, C#5) + overtone shimmer
-        const masterGain = ctx.createGain();
-        masterGain.connect(ctx.destination);
-        masterGain.gain.setValueAtTime(volume * 0.9, now);
+      // Master gain for this alarm cycle
+      const cycleGain = ctx.createGain();
+      cycleGain.gain.setValueAtTime(vol * 0.95, now);
+      cycleGain.connect(dest);
 
-        // 3-step rhythmic pulse in each cycle (t=0.0s, 0.4s, 0.85s)
-        const pulseTimes = [0, 0.4, 0.85];
-        const chordFrequencies = [
-          [110.0, 220.0, 329.63, 554.37], // Step 1: Deep A Major warm swell
-          [110.0, 220.0, 329.63, 659.25], // Step 2: Rising E5 high resonance
-          [110.0, 220.0, 440.0, 880.0],   // Step 3: Pure octaval resolve
-        ];
+      // Double-strike pattern timestamps:
+      // Strike 1: t=0.00s (Beacon + Sub-kick)
+      // Strike 2: t=0.14s (High Accent Strike)
+      // Strike 3: t=0.38s (Beacon + Sub-kick)
+      // Strike 4: t=0.52s (High Accent Strike)
+      const strikes = [
+        { time: now + 0.00, hasKick: true, freqs: [1046.5, 1567.98] },
+        { time: now + 0.14, hasKick: false, freqs: [2093.0, 2637.02] },
+        { time: now + 0.38, hasKick: true, freqs: [1046.5, 1567.98] },
+        { time: now + 0.52, hasKick: false, freqs: [2093.0, 2637.02] },
+      ];
 
-        pulseTimes.forEach((delay, stepIdx) => {
-          const t = now + delay;
-          const freqs = chordFrequencies[stepIdx];
+      strikes.forEach((strike) => {
+        const t = strike.time;
 
-          // Filter for dark obsidian acoustic warmth
+        // 1. Sub-bass punch transient (gives the alarm physical weight and presence)
+        if (strike.hasKick) {
+          const kickOsc = ctx.createOscillator();
+          const kickGain = ctx.createGain();
+          kickOsc.type = 'sine';
+          kickOsc.frequency.setValueAtTime(145, t);
+          kickOsc.frequency.exponentialRampToValueAtTime(45, t + 0.08);
+
+          kickGain.gain.setValueAtTime(0.001, t);
+          kickGain.gain.linearRampToValueAtTime(0.55 * vol, t + 0.006);
+          kickGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
+
+          kickOsc.connect(kickGain);
+          kickGain.connect(cycleGain);
+          kickOsc.start(t);
+          kickOsc.stop(t + 0.11);
+          activeOscillators.push(kickOsc);
+        }
+
+        // 2. High-energy dual beacon tones (penetrates background noise)
+        strike.freqs.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+
+          // Sawtooth filtered gives a sharp modern cyber acoustic edge
+          osc.type = idx === 0 ? 'triangle' : 'sawtooth';
+          osc.frequency.setValueAtTime(freq, t);
+
           const filter = ctx.createBiquadFilter();
           filter.type = 'lowpass';
-          filter.frequency.setValueAtTime(800, t);
-          filter.frequency.exponentialRampToValueAtTime(2400, t + 0.15);
-          filter.frequency.exponentialRampToValueAtTime(700, t + 0.38);
-          filter.connect(masterGain);
+          filter.frequency.setValueAtTime(3200, t);
+          filter.Q.setValueAtTime(2.0, t);
 
-          freqs.forEach((freq, i) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.001, t);
+          gain.gain.linearRampToValueAtTime(0.45 * vol, t + 0.008);
+          gain.gain.setValueAtTime(0.40 * vol, t + 0.06);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
 
-            // Blend triangle and sine for organic bell-synth timbre
-            osc.type = i === 0 ? 'sine' : (i % 2 === 0 ? 'triangle' : 'sine');
-            osc.frequency.setValueAtTime(freq, t);
-
-            // Subtle FM shimmer modulation
-            if (i > 1) {
-              const mod = ctx.createOscillator();
-              const modGain = ctx.createGain();
-              mod.frequency.value = 6; // 6Hz gentle vibrato
-              modGain.gain.value = 4;
-              mod.connect(osc.frequency);
-              mod.start(t);
-              mod.stop(t + 0.4);
-              activeOscillators.push(mod);
-            }
-
-            // Envelope: Crisp smooth attack with lush resonant decay
-            const noteVol = (i === 0 ? 0.4 : 0.2) / freqs.length;
-            gain.gain.setValueAtTime(0.0001, t);
-            gain.gain.exponentialRampToValueAtTime(noteVol, t + 0.04);
-            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
-
-            osc.connect(gain);
-            gain.connect(filter);
-
-            osc.start(t);
-            osc.stop(t + 0.39);
-            activeOscillators.push(osc);
-          });
-        });
-
-        // Obsidian synchronized vibration rhythm: [pulse, pause, pulse, pause, long pulse]
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([120, 80, 120, 80, 280, 500]);
-        }
-      }
-
-      // ─── 2. GENTLE MORNING MARIMBA ─────────────────────────────────────────
-      else if (soundType === 'gentle_marimba') {
-        const chord = [523.25, 659.25, 783.99, 1046.5];
-        chord.forEach((freq, idx) => {
-          const t = now + idx * 0.1;
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, t);
-
-          gain.gain.setValueAtTime(0.0001, t);
-          gain.gain.exponentialRampToValueAtTime(volume * 0.35, t + 0.025);
-          gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
-
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(t);
-          osc.stop(t + 0.48);
-          activeOscillators.push(osc);
-        });
-
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([250, 150, 250, 400]);
-        }
-      }
-
-      // ─── 3. HARMONIC PULSE BELL ────────────────────────────────────────────
-      else if (soundType === 'clock_chime') {
-        [783.99, 1046.5, 1318.51].forEach((freq, idx) => {
-          const t = now + idx * 0.12;
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(freq, t);
-
-          gain.gain.setValueAtTime(0.0001, t);
-          gain.gain.exponentialRampToValueAtTime(volume * 0.45, t + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(t);
-          osc.stop(t + 0.38);
-          activeOscillators.push(osc);
-        });
-
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([150, 80, 150, 80, 200, 300]);
-        }
-      }
-
-      // ─── 4. EMERGENCY URRENT SIREN ─────────────────────────────────────────
-      else if (soundType === 'android_siren') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(880, now);
-        osc.frequency.linearRampToValueAtTime(1320, now + 0.35);
-        osc.frequency.linearRampToValueAtTime(880, now + 0.7);
-
-        gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(volume * 0.7, now + 0.05);
-        gain.gain.setValueAtTime(volume * 0.7, now + 0.65);
-        gain.gain.linearRampToValueAtTime(0.001, now + 0.75);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.78);
-        activeOscillators.push(osc);
-
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([350, 100, 350, 100]);
-        }
-      }
-
-      // ─── 5. SYSTEM DIGITAL PRECISION ───────────────────────────────────────
-      else {
-        const beepTimes = [0, 0.12, 0.24, 0.36];
-        const primaryFreq = 1046.5;
-
-        beepTimes.forEach((delay) => {
-          const t = now + delay;
-          const osc = ctx.createOscillator();
-          const gainNode = ctx.createGain();
-
-          osc.type = 'square';
-          osc.frequency.setValueAtTime(primaryFreq, t);
-
-          gainNode.gain.setValueAtTime(0.0001, t);
-          gainNode.gain.linearRampToValueAtTime(volume * 0.7, t + 0.008);
-          gainNode.gain.setValueAtTime(volume * 0.7, t + 0.065);
-          gainNode.gain.linearRampToValueAtTime(0.0001, t + 0.075);
-
-          osc.connect(gainNode);
-          gainNode.connect(ctx.destination);
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(cycleGain);
 
           osc.start(t);
-          osc.stop(t + 0.08);
+          osc.stop(t + 0.12);
           activeOscillators.push(osc);
         });
+      });
 
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([80, 40, 80, 40, 80, 40, 80, 450]);
-        }
+      // Synchronized intense tactile vibration
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([140, 70, 140, 220, 140, 70, 140, 450]);
       }
     };
-
-    // Cycle intervals for distinct rhythms
-    const intervalMap = {
-      tymvera_obsidian: 1450,
-      gentle_marimba: 1200,
-      clock_chime: 1300,
-      android_siren: 1100,
-      system_digital: 950,
-    };
-    const cycleInterval = intervalMap[soundType] || 1450;
 
     playCycle();
-    activeAlarmInterval = setInterval(playCycle, cycleInterval);
+    activeAlarmInterval = setInterval(playCycle, 950);
 
     return stopAlarmSound;
   } catch (err) {
-    console.warn('[AlarmEngine] Alarm audio playback error:', err);
+    console.warn('[AlarmEngine] Alarm playback error:', err);
     return () => {};
   }
 }
 
 /**
- * TYMVERA Signature Notification Chime
- * Crystalline 4-tone harmonic arpeggio with obsidian bell shimmer.
- * Distinctive, elegant, and instantly recognizable.
+ * TYMVERA Signature Focus Notification Chime
+ * Loud, crisp, crystalline double-strike chime (1318.5Hz E6 -> 1975.5Hz B6 with 2637Hz sparkle).
+ * Audible across a room with zero lag.
  */
-export function playNotificationChime() {
+export function playNotificationChime(volume = 0.95) {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -345,55 +286,59 @@ export function playNotificationChime() {
       ctx.resume().catch(() => {});
     }
 
+    const dest = getMasterDestination(ctx);
     const now = ctx.currentTime;
+    const vol = Math.min(1.0, Math.max(0.3, volume));
 
-    // TYMVERA Signature Shimmer Chime: F#5 (739.99Hz), A#5 (932.33Hz), C#6 (1108.73Hz), F#6 (1479.98Hz)
-    const tones = [
-      { freq: 739.99, delay: 0.0, gain: 0.22, decay: 0.6 },
-      { freq: 932.33, delay: 0.07, gain: 0.20, decay: 0.65 },
-      { freq: 1108.73, delay: 0.14, gain: 0.18, decay: 0.7 },
-      { freq: 1479.98, delay: 0.21, gain: 0.16, decay: 0.75 },
+    const masterGain = ctx.createGain();
+    masterGain.gain.setValueAtTime(vol * 0.95, now);
+    masterGain.connect(dest);
+
+    // Strike 1 (t=0.0s): 1318.51Hz (E6) + 1975.53Hz (B6)
+    // Strike 2 (t=0.10s): 1975.53Hz (B6) + 2637.02Hz (E7) + Sub punch
+    const notes = [
+      { t: now + 0.00, freq: 1318.51, type: 'triangle', dur: 0.35, gain: 0.45 },
+      { t: now + 0.00, freq: 1975.53, type: 'sine', dur: 0.30, gain: 0.35 },
+      { t: now + 0.10, freq: 1975.53, type: 'triangle', dur: 0.40, gain: 0.50 },
+      { t: now + 0.10, freq: 2637.02, type: 'sine', dur: 0.45, gain: 0.40 },
     ];
 
-    // Subtle warm sub-harmonic fundamental to anchor the chime
+    // Sub foundation on strike 2 for satisfying acoustic snap
     const subOsc = ctx.createOscillator();
     const subGain = ctx.createGain();
-    subOsc.type = 'sine';
-    subOsc.frequency.setValueAtTime(369.99, now); // F#4
-    subGain.gain.setValueAtTime(0.0001, now);
-    subGain.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
-    subGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+    subOsc.type = 'triangle';
+    subOsc.frequency.setValueAtTime(220, now + 0.10);
+    subGain.gain.setValueAtTime(0.001, now + 0.10);
+    subGain.gain.linearRampToValueAtTime(0.25 * vol, now + 0.11);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
     subOsc.connect(subGain);
-    subGain.connect(ctx.destination);
-    subOsc.start(now);
-    subOsc.stop(now + 0.6);
+    subGain.connect(masterGain);
+    subOsc.start(now + 0.10);
+    subOsc.stop(now + 0.36);
 
-    tones.forEach((tone) => {
-      const t = now + tone.delay;
+    notes.forEach((n) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      // Triangle wave delivers pure crystal bell resonance without harsh square edges
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(tone.freq, t);
+      osc.type = n.type;
+      osc.frequency.setValueAtTime(n.freq, n.t);
 
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(tone.gain, t + 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + tone.decay);
+      gain.gain.setValueAtTime(0.001, n.t);
+      gain.gain.linearRampToValueAtTime(n.gain * vol, n.t + 0.006);
+      gain.gain.exponentialRampToValueAtTime(0.0001, n.t + n.dur);
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(masterGain);
 
-      osc.start(t);
-      osc.stop(t + tone.decay + 0.05);
+      osc.start(n.t);
+      osc.stop(n.t + n.dur + 0.02);
     });
 
-    // Tactile notification pulse
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
-      navigator.vibrate([60, 40, 80]);
+      navigator.vibrate([100, 50, 150]);
     }
   } catch (e) {
-    console.warn('[AlarmEngine] Notification chime playback error:', e);
+    console.warn('[AlarmEngine] Notification chime error:', e);
   }
 }
 

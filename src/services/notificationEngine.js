@@ -3,9 +3,8 @@
  * Features:
  * - Robust Android PWA & Desktop Notification Dispatch via ServiceWorkerRegistration.showNotification
  * - Resilient Grace-Window Triggering (eliminates dropped alerts caused by phone sleep / timer throttling)
- * - Customizable Lead Time (0 min for instant/exact time, 1m, 2m, 5m, etc.)
- * - Start & End Milestone Alerts + Instant Schedule Handover Detection
- * - Synchronized Signature TYMVERA Obsidian Glass Chime + Tactile Vibration
+ * - Alarm Native Notification dispatch (rings visual notification on lock screen alongside audio synthesizer)
+ * - High-Impact TYMVERA Focus Chime + Tactile Vibration
  */
 
 import { playNotificationChime } from './alarmEngine';
@@ -34,7 +33,42 @@ export async function requestNotificationPermission() {
 }
 
 /**
- * Dispatch a notification via Service Worker / Browser API, in-app toast, and signature chime
+ * Dispatch high-urgency native notification for ringing wake / sleep alarms
+ */
+export function dispatchAlarmNativeNotification({ title, subtitle }) {
+  if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+    return;
+  }
+
+  const options = {
+    body: subtitle,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    vibrate: [300, 100, 300, 100, 500],
+    tag: 'tymvera-active-alarm',
+    renotify: true,
+    requireInteraction: true,
+    silent: false,
+    data: { url: '/' },
+  };
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready
+      .then((reg) => reg.showNotification(title, options))
+      .catch(() => {
+        try {
+          new Notification(title, options);
+        } catch (e) {}
+      });
+  } else {
+    try {
+      new Notification(title, options);
+    } catch (e) {}
+  }
+}
+
+/**
+ * Dispatch milestone notifications via Service Worker / Browser API, in-app toast, and signature chime
  */
 export function dispatchNotification({
   title,
@@ -43,10 +77,10 @@ export function dispatchNotification({
   badge = '/icon-192.png',
   onInAppToast,
 }) {
-  // 1. Play signature TYMVERA focus chime
-  playNotificationChime();
+  // 1. Play loud, crisp TYMVERA focus chime
+  playNotificationChime(0.95);
 
-  // 2. Dispatch in-app interactive toast for instant visual feedback
+  // 2. Dispatch in-app interactive toast
   if (typeof onInAppToast === 'function') {
     onInAppToast({
       id: `toast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -62,34 +96,26 @@ export function dispatchNotification({
       body,
       icon,
       badge,
-      vibrate: [120, 60, 120],
+      vibrate: [180, 80, 180, 80, 250],
       tag: `tymvera_notif_${Date.now()}`,
       renotify: true,
+      requireInteraction: false,
       silent: false,
       data: { url: '/' },
     };
 
-    // On Android PWA / Chrome, new Notification() throws 'Illegal constructor'.
-    // Must use navigator.serviceWorker.ready.then(reg => reg.showNotification())
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.ready
-        .then((reg) => {
-          return reg.showNotification(title, options);
-        })
+        .then((reg) => reg.showNotification(title, options))
         .catch((err) => {
-          console.warn('[NotificationEngine] ServiceWorker showNotification fallback:', err);
           try {
             new Notification(title, options);
-          } catch (e) {
-            // Suppress unsupported constructor error on Android
-          }
+          } catch (e) {}
         });
     } else {
       try {
         new Notification(title, options);
-      } catch (e) {
-        console.warn('[NotificationEngine] Native Notification error:', e);
-      }
+      } catch (e) {}
     }
   }
 }
