@@ -69,7 +69,22 @@
   <link rel="stylesheet" href="/vendor/material-symbols.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0" />
 
-  <!-- Tailwind CSS: Local Self-Hosted + CDN Fallback -->
+  <!-- Instant Theme Sync (Prevents Flash of Wrong Theme) -->
+  <script>
+    (function() {
+      try {
+        var savedTheme = localStorage.getItem("fo6_theme");
+        var isDark = savedTheme === "dark" || (!savedTheme || savedTheme === "system") && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        if (isDark) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- Tailwind CSS: Local Self-Hosted + CDN Fallback with Class Dark Mode -->
   <script src="/vendor/tailwindcss.js"></script>
   <script>
     if (!window.tailwind) {
@@ -77,6 +92,24 @@
       s.src = 'https://cdn.tailwindcss.com';
       document.head.appendChild(s);
     }
+  </script>
+  <script>
+    (function configureTailwind() {
+      if (window.tailwind) {
+        window.tailwind.config = {
+          darkMode: 'class',
+          theme: {
+            extend: {
+              colors: {
+                obsidian: '#080808',
+              }
+            }
+          }
+        };
+      } else {
+        setTimeout(configureTailwind, 20);
+      }
+    })();
   </script>
 
   <!-- PWA Offline Service Worker Registration -->

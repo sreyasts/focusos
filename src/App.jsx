@@ -1005,6 +1005,11 @@ function TYMVERA() {
           twLoaded = true;
         }
 
+        if (window.tailwind) {
+          if (!window.tailwind.config) window.tailwind.config = {};
+          window.tailwind.config.darkMode = "class";
+        }
+
         if (!document.getElementById("material-icons")) {
           const link = document.createElement("link");
           link.id = "material-icons";
@@ -1081,8 +1086,7 @@ function TYMVERA() {
               !LEGACY_SAMPLE_IDS.has(p.id) &&
               p.name !== "Skills / Python / AI" &&
               p.name !== "Gym" &&
-              p.name !== "Study (Evening)" &&
-              p.name !== "Sleep"
+              p.name !== "Study (Evening)"
           );
           if (cleanedPres.length !== pres.length) {
             pres = cleanedPres;
@@ -1103,8 +1107,7 @@ function TYMVERA() {
                 (LEGACY_SAMPLE_IDS.has(b.id) ||
                   b.name === "Skills / Python / AI" ||
                   b.name === "Gym" ||
-                  b.name === "Study (Evening)" ||
-                  b.name === "Sleep")
+                  b.name === "Study (Evening)")
             );
             if (hasLegacy) {
               const cleanedList = hist[today].blocksList.filter(
@@ -1113,8 +1116,7 @@ function TYMVERA() {
                   !LEGACY_SAMPLE_IDS.has(b.id) &&
                   b.name !== "Skills / Python / AI" &&
                   b.name !== "Gym" &&
-                  b.name !== "Study (Evening)" &&
-                  b.name !== "Sleep"
+                  b.name !== "Study (Evening)"
               );
               const cleanedBlocks = {};
               for (const [k, v] of Object.entries(hist[today].blocks || {})) {
@@ -1584,11 +1586,27 @@ function TYMVERA() {
       border: isDark ? "border-[#222222]" : "border-gray-200",
       text: isDark ? "text-white" : "text-gray-900",
       text2: isDark ? "text-gray-300" : "text-gray-700",
-      text3: isDark ? "text-gray-500" : "text-gray-400",
+      text3: isDark ? "text-gray-500" : "text-gray-500",
     };
   }, [isDark]);
 
   useEffect(() => {
+    // 1. Synchronize HTML class for Tailwind class-based dark mode
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+
+    // 2. Ensure Tailwind config stays in class dark mode
+    if (typeof window !== "undefined" && window.tailwind) {
+      if (!window.tailwind.config) window.tailwind.config = {};
+      if (window.tailwind.config.darkMode !== "class") {
+        window.tailwind.config.darkMode = "class";
+      }
+    }
+
+    // 3. Synchronize mobile status bar meta theme-color
     let metaThemeColor = document.querySelector("meta[name=theme-color]");
     if (!metaThemeColor) {
       metaThemeColor = document.createElement("meta");
@@ -2379,7 +2397,7 @@ function TYMVERA() {
             </div>
             <button
               onClick={() => setShowBackupModal(false)}
-              className="p-1 rounded-full text-gray-400 hover:text-white transition-colors"
+              className="p-1 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
             >
               <Icon name="close" size={20} />
             </button>
@@ -3105,7 +3123,7 @@ function TYMVERA() {
             </div>
             <button
               onClick={() => setShowAddTaskGraphModal(false)}
-              className="p-1 rounded-full text-gray-400 hover:text-white"
+              className="p-1 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white"
             >
               <Icon name="close" size={20} />
             </button>
@@ -3185,7 +3203,7 @@ function TYMVERA() {
             </span>
             <button
               onClick={() => setShowFirebaseModal(false)}
-              className="text-gray-400 hover:text-white"
+              className="text-gray-400 hover:text-gray-700 dark:hover:text-white"
             >
               <Icon name="close" size={20} />
             </button>
@@ -4588,7 +4606,12 @@ function TYMVERA() {
           {["light", "dark", "system"].map((m) => (
             <button
               key={m}
-              onClick={() => setThemeMode(m)}
+              onClick={() => {
+                setThemeMode(m);
+                try {
+                  localStorage.setItem("fo6_theme", m);
+                } catch (e) {}
+              }}
               className={`flex-1 py-3 rounded-2xl text-xs font-black capitalize transition-all ${
                 themeMode === m
                   ? "bg-blue-500 text-white shadow-md shadow-blue-500/20"
@@ -4730,7 +4753,7 @@ function TYMVERA() {
         className={`h-screen overflow-y-auto overflow-x-hidden ${themeColors.bg} ${themeColors.text} font-sans flex justify-center selection:bg-blue-500/30 transition-colors duration-300`}
       >
         <div
-          className={`w-full max-w-[430px] relative min-h-full border-x ${themeColors.border} bg-white dark:bg-[#080808]`}
+          className={`w-full max-w-[430px] relative min-h-full border-x ${themeColors.border} ${themeColors.bg}`}
         >
           {tab === "today" && renderHomeTab()}
           {tab === "progress" && renderProgressTab()}
