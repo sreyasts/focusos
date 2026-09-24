@@ -609,26 +609,33 @@ export async function getRawStorageDiagnosticReport() {
 /**
  * Export complete backup payload as JSON file download
  */
-export function exportBackupData({ history, presets, alarms, notificationConfig }) {
+export function exportBackupData({ history, presets, alarms, notificationConfig, themeMode }) {
   const payload = {
     app: "TYMVERA",
-    version: "6.0-pro",
+    version: "2.0.0",
     exportedAt: new Date().toISOString(),
     history: history || {},
     presets: presets || [],
     alarms: alarms || {},
     notificationConfig: notificationConfig || {},
+    themeMode: themeMode || 'system',
   };
 
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `TYMVERA-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const jsonString = JSON.stringify(payload, null, 2);
+
+  if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof Blob !== 'undefined') {
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `TYMVERA-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  return jsonString;
 }
 
 /**

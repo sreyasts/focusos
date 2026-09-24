@@ -170,7 +170,10 @@ export async function onAuthChange(callback) {
 
 /**
  * Sync user profile and app data to Cloud Firestore
- * Stores data in collection 'users/{userId}' complying with Firestore security rules.
+ * Scalable subcollection architecture:
+ * - users/{userId}: Root profile, metadata, and sync timestamps
+ * - users/{userId}/settings/current: Presets, smart alarms, and notification configurations
+ * - users/{userId}/days/{date}: Discrete daily routine logs and metrics (bypasses 1MB doc limit)
  */
 export async function syncUserDataToCloud(userId, data) {
   if (!userId || !data) return;
@@ -178,29 +181,63 @@ export async function syncUserDataToCloud(userId, data) {
     const { db } = await getFirebaseInstances();
     if (!db) return;
 
-    // Clean payload for Firestore (remove undefined / functions)
     const cleanHistory = JSON.parse(JSON.stringify(data.history || {}));
     const cleanPresets = JSON.parse(JSON.stringify(data.presets || []));
     const cleanAlarms = JSON.parse(JSON.stringify(data.alarms || {}));
     const cleanNotif = JSON.parse(JSON.stringify(data.notificationConfig || {}));
+    const timestamp = new Date().toISOString();
 
-    const payload = {
-      TYMVERA_history: cleanHistory,
-      TYMVERA_presets: cleanPresets,
-      TYMVERA_alarms: cleanAlarms,
-      TYMVERA_notif_config: cleanNotif,
-      TYMVERA_theme: data.themeMode || 'system',
-      TYMVERA_chart_mode: data.chartViewMode || 'line',
-      // Dual-compatibility mirror
-      history: cleanHistory,
-      presets: cleanPresets,
-      alarms: cleanAlarms,
-      lastSyncedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    const userRef = db.collection('users').doc(userId);
 
-    await db.collection('users').doc(userId).set(payload, { merge: true });
-    return { success: true, timestamp: payload.lastSyncedAt };
+    // 1. Root Document: Metadata & high-level state
+    await userRef.set(
+      {
+        themeMode: data.themeMode || 'system',
+        chartViewMode: data.chartViewMode || 'line',
+        lastSyncedAt: timestamp,
+        updatedAt: timestamp,
+        daysLoggedCount: Object.keys(cleanHistory).length,
+        // Legacy compatibility mirror for older client versions
+        TYMVERA_theme: data.themeMode || 'system',
+        TYMVERA_chart_mode: data.chartViewMode || 'line',
+      },
+      { merge: true }
+    );
+
+    // 2. Settings Subcollection: Presets, alarms, notifications
+    await userRef.collection('settings').doc('current').set(
+      {
+        presets: cleanPresets,
+        alarms: cleanAlarms,
+        notificationConfig: cleanNotif,
+        updatedAt: timestamp,
+      },
+      { merge: true }
+    );
+
+    // 3. Days Subcollection: Individual records for each date (prevents monolithic 1MB bloat)
+    const batch = db.batch ? db.batch() : null;
+    const dateKeys = Object.keys(cleanHistory);
+    // Write up to 100 days per batch if batching supported
+    if (batch && dateKeys.length <= 400) {
+      dateKeys.forEach((dateStr) => {
+        const dayRef = userRef.collection('days').doc(dateStr);
+        batch.set(dayRef, { ...cleanHistory[dateStr], date: dateStr, updatedAt: timestamp }, { merge: true });
+      });
+      await batch.commit();
+    } else {
+      // Async parallel chunked writes
+      await Promise.all(
+        dateKeys.map((dateStr) =>
+          userRef.collection('days').doc(dateStr).set(
+            { ...cleanHistory[dateStr], date: dateStr, updatedAt: timestamp },
+            { merge: true }
+          )
+        )
+      );
+    }
+
+    return { success: true, timestamp };
   } catch (err) {
     console.error('Error syncing TYMVERA data to Firestore:', err);
     throw err;
@@ -209,26 +246,73 @@ export async function syncUserDataToCloud(userId, data) {
 
 /**
  * Load user data from Cloud Firestore
+ * Dual-reads: checks subcollections first; falls back cleanly to legacy root document
  */
 export async function loadUserDataFromCloud(userId) {
   if (!userId) return null;
   try {
     const { db } = await getFirebaseInstances();
     if (!db) return null;
-    const docSnap = await db.collection('users').doc(userId).get();
-    if (docSnap.exists) {
-      const data = docSnap.data();
-      return {
-        history: data.TYMVERA_history || data.history || {},
-        presets: data.TYMVERA_presets || data.presets || [],
-        alarms: data.TYMVERA_alarms || data.alarms || null,
-        notificationConfig: data.TYMVERA_notif_config || data.TYMVERA_notif || data.notificationConfig || null,
-        themeMode: data.TYMVERA_theme || data.theme || null,
-        chartViewMode: data.TYMVERA_chart_mode || null,
-        lastSyncedAt: data.lastSyncedAt || data.updatedAt || null,
-        rawPlan: data.plan || null,
-      };
+
+    const userRef = db.collection('users').doc(userId);
+    const rootSnap = await userRef.get();
+    if (!rootSnap.exists) return null;
+
+    const rootData = rootSnap.data();
+    let history = {};
+    let presets = [];
+    let alarms = null;
+    let notificationConfig = null;
+
+    // 1. Try loading settings subcollection
+    try {
+      const settingsSnap = await userRef.collection('settings').doc('current').get();
+      if (settingsSnap.exists) {
+        const sData = settingsSnap.data();
+        presets = sData.presets || [];
+        alarms = sData.alarms || null;
+        notificationConfig = sData.notificationConfig || null;
+      }
+    } catch (e) {
+      console.warn('Subcollection settings read fallback:', e);
     }
+
+    // 2. Try loading days subcollection
+    try {
+      const daysSnap = await userRef.collection('days').get();
+      if (daysSnap && !daysSnap.empty) {
+        daysSnap.forEach((doc) => {
+          history[doc.id] = doc.data();
+        });
+      }
+    } catch (e) {
+      console.warn('Subcollection days read fallback:', e);
+    }
+
+    // 3. Fallback to legacy single document if subcollections were empty
+    if (Object.keys(history).length === 0) {
+      history = rootData.TYMVERA_history || rootData.history || {};
+    }
+    if (presets.length === 0) {
+      presets = rootData.TYMVERA_presets || rootData.presets || [];
+    }
+    if (!alarms) {
+      alarms = rootData.TYMVERA_alarms || rootData.alarms || null;
+    }
+    if (!notificationConfig) {
+      notificationConfig = rootData.TYMVERA_notif_config || rootData.TYMVERA_notif || rootData.notificationConfig || null;
+    }
+
+    return {
+      history,
+      presets,
+      alarms,
+      notificationConfig,
+      themeMode: rootData.themeMode || rootData.TYMVERA_theme || rootData.theme || null,
+      chartViewMode: rootData.chartViewMode || rootData.TYMVERA_chart_mode || null,
+      lastSyncedAt: rootData.lastSyncedAt || rootData.updatedAt || null,
+      rawPlan: rootData.plan || null,
+    };
   } catch (err) {
     console.error('Error loading TYMVERA data from Firestore:', err);
   }
