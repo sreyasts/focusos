@@ -9,8 +9,8 @@
  * - Push & local notification click lifecycle handling
  */
 
-const CACHE_NAME = 'tymvera-v32-core';
-const RUNTIME_CACHE = 'tymvera-v32-runtime';
+const CACHE_NAME = 'tymvera-v33-core';
+const RUNTIME_CACHE = 'tymvera-v33-runtime';
 
 // Critical assets to precache on installation for guaranteed offline execution
 const PRECACHE_ASSETS = [
@@ -207,9 +207,89 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
+// ─── SCHEDULE & NOTIFICATION CACHE IN SERVICE WORKER ────────────────────────
+let cachedSchedule = [];
+let cachedAlarms = {};
+let cachedConfig = {};
+
+function checkBackgroundSchedule() {
+  const now = new Date();
+  const currentTotalMins = now.getHours() * 60 + now.getMinutes();
+
+  if (Array.isArray(cachedSchedule) && cachedSchedule.length > 0) {
+    for (const block of cachedSchedule) {
+      if (!block || !block.start) continue;
+      const [sh, sm] = block.start.split(':').map(Number);
+      const startMins = sh * 60 + (sm || 0);
+      const diff = currentTotalMins - startMins;
+
+      if (diff >= 0 && diff <= 3) {
+        return self.registration.showNotification(`⚡ ${block.name} • Starting Now`, {
+          body: `Scheduled: ${block.start} (${block.duration || 60}m session)`,
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
+          vibrate: [250, 100, 250, 100, 500],
+          tag: `sw_start_${block.id || block.name}`,
+          renotify: true,
+          data: { url: '/' },
+        });
+      }
+    }
+  }
+  return Promise.resolve();
+}
+
+// Web Push Notifications: Wake up and alert user even if PWA window is closed
+self.addEventListener('push', (event) => {
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data = { title: 'TYMVERA Alert', body: event.data.text() };
+    }
+  }
+
+  const title = data.title || '⚡ TYMVERA Routine Alert';
+  const options = {
+    body: data.body || 'Scheduled routine milestone alert',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    vibrate: [250, 100, 250, 100, 500],
+    tag: data.tag || `tymvera_push_${Date.now()}`,
+    renotify: true,
+    requireInteraction: data.requireInteraction || false,
+    silent: false,
+    data: data.data || { url: '/' },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Periodic Background Sync (supported mobile PWA engines)
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'tymvera-schedule-sync') {
+    event.waitUntil(checkBackgroundSchedule());
+  }
+});
+
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'tymvera-background-alert') {
+    event.waitUntil(checkBackgroundSchedule());
+  }
+});
+
 // Message listener for skipWaiting or manual updates
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  } else if (event.data.type === 'SYNC_SCHEDULE') {
+    cachedSchedule = event.data.blocks || [];
+    cachedAlarms = event.data.alarms || {};
+    cachedConfig = event.data.config || {};
+  } else if (event.data.type === 'TRIGGER_NOTIFICATION') {
+    const { title, options } = event.data;
+    event.waitUntil(self.registration.showNotification(title, options));
   }
 });

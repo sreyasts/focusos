@@ -177,12 +177,12 @@ export function checkScheduleNotifications({
     let endMins = eh * 60 + (em || 0);
     if (endMins <= startMins) endMins += 24 * 60;
 
-    // ─── SECTION START EVALUATION (with 3-minute grace window) ─────────────
+    // ─── SECTION START EVALUATION (with 5-minute grace window for background wake) ───
     if (config.notifyStart !== false) {
       const targetStartMins = startMins - lead;
       const startDiff = currentTotalMins - targetStartMins;
 
-      if (startDiff >= 0 && startDiff <= 3) {
+      if (startDiff >= 0 && startDiff <= 5) {
         const cacheKey = `notif_start_${dateStr}_${blockKeyId}_${targetStartMins}`;
         if (!sessionStorage.getItem(cacheKey)) {
           sessionStorage.setItem(cacheKey, 'true');
@@ -191,12 +191,12 @@ export function checkScheduleNotifications({
       }
     }
 
-    // ─── SECTION END EVALUATION (with 3-minute grace window) ───────────────
+    // ─── SECTION END EVALUATION (with 5-minute grace window for background wake) ─────
     if (config.notifyEnd !== false) {
       const targetEndMins = endMins;
       const endDiff = currentTotalMins - targetEndMins;
 
-      if (endDiff >= 0 && endDiff <= 3) {
+      if (endDiff >= 0 && endDiff <= 5) {
         const cacheKey = `notif_end_${dateStr}_${blockKeyId}_${targetEndMins}`;
         if (!sessionStorage.getItem(cacheKey)) {
           sessionStorage.setItem(cacheKey, 'true');

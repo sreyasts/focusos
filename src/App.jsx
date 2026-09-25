@@ -23,6 +23,8 @@ import {
   dispatchAlarmNativeNotification,
 } from "./services/notificationEngine";
 
+import { startBackgroundWorkerTimer } from "./services/timerWorker";
+
 import {
   signInWithGoogle,
   signOut,
@@ -919,9 +921,19 @@ function TYMVERA() {
     startAudioKeepAlive();
 
     const handleVisChange = () => {
-      if (document.visibilityState === "visible") {
-        startAudioKeepAlive();
-        setNow(new Date());
+      startAudioKeepAlive();
+      setNow(new Date());
+
+      // If app is placed in background or screen is locked, ensure service worker has latest schedule
+      if (document.visibilityState === "hidden") {
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "SYNC_SCHEDULE",
+            blocks: presets,
+            alarms,
+            config: notificationConfig,
+          });
+        }
       }
     };
     document.addEventListener("visibilitychange", handleVisChange);
@@ -1360,9 +1372,14 @@ function TYMVERA() {
     }
   }, [presets, history, alarms.wake.autoSync, alarms.sleep.autoSync, isReady, getBlocksForDate]);
 
-  // ─── TICK & ALARM TRIGGER EVALUATOR (1s) ─────────────────────────────────────
+  // ─── RESILIENT BACKGROUND TICK, ALARM & NOTIFICATION EVALUATOR ──────────────
+  // Executes inside an isolated Web Worker thread: survives background tab throttling and screen lock
   useEffect(() => {
-    const t = setInterval(() => {
+    // 1. Prime audio keep-alive carrier and MediaSession immediately
+    startAudioKeepAlive();
+
+    let notifCycle = 0;
+    const stopTimer = startBackgroundWorkerTimer(() => {
       const d = new Date();
       setNow(d);
 
@@ -1370,13 +1387,13 @@ function TYMVERA() {
       const ds = localDateStr(d);
       const currentTotalMins = d.getHours() * 60 + d.getMinutes();
 
-      // Check Wake Alarm with 2-minute grace window to eliminate background timer throttling skips
+      // ─── A. EVALUATE WAKE & SLEEP ALARMS (Every 1s) ─────────────────────────
       if (alarms.wake && alarms.wake.enabled && alarms.wake.time) {
         const [wh, wm] = alarms.wake.time.split(":").map(Number);
         const wakeTotalMins = wh * 60 + (wm || 0);
         const diff = currentTotalMins - wakeTotalMins;
 
-        if (diff >= 0 && diff <= 2) {
+        if (diff >= 0 && diff <= 3) {
           const wakeKey = `alarm_wake_triggered_${ds}_${alarms.wake.time}`;
           if (!sessionStorage.getItem(wakeKey) && !activeAlarm) {
             sessionStorage.setItem(wakeKey, "true");
@@ -1393,13 +1410,12 @@ function TYMVERA() {
         }
       }
 
-      // Check Sleep Alarm with 2-minute grace window
       if (alarms.sleep && alarms.sleep.enabled && alarms.sleep.time) {
         const [sh, sm] = alarms.sleep.time.split(":").map(Number);
         const sleepTotalMins = sh * 60 + (sm || 0);
         const diff = currentTotalMins - sleepTotalMins;
 
-        if (diff >= 0 && diff <= 2) {
+        if (diff >= 0 && diff <= 3) {
           const sleepKey = `alarm_sleep_triggered_${ds}_${alarms.sleep.time}`;
           if (!sessionStorage.getItem(sleepKey) && !activeAlarm) {
             sessionStorage.setItem(sleepKey, "true");
@@ -1415,32 +1431,40 @@ function TYMVERA() {
           }
         }
       }
+
+      // ─── B. EVALUATE SECTION NOTIFICATIONS (Every 3s) ───────────────────────
+      notifCycle++;
+      if (notifCycle % 3 === 0) {
+        const today = todayStr();
+        const todaysBlocks = getBlocksForDate(today, presets);
+        checkScheduleNotifications({
+          todaysBlocks,
+          config: notificationConfig,
+          dateStr: today,
+          onInAppToast: (toast) => {
+            setInAppToast(toast);
+            setTimeout(() => {
+              setInAppToast((prev) => (prev && prev.id === toast.id ? null : prev));
+            }, 6000);
+          },
+        });
+
+        // ─── C. SYNC SCHEDULE TO SERVICE WORKER (Every 15s) ───────────────────
+        if (notifCycle % 15 === 0 && navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "SYNC_SCHEDULE",
+            blocks: todaysBlocks,
+            alarms,
+            config: notificationConfig,
+          });
+        }
+      }
     }, 1000);
-    return () => clearInterval(t);
-  }, [alarms, activeAlarm, isReady]);
 
-  // ─── NOTIFICATION EVALUATOR (5s) ────────────────────────────────────────────
-  useEffect(() => {
-    if (!isReady) return;
-
-    const interval = setInterval(() => {
-      const today = todayStr();
-      const todaysBlocks = getBlocksForDate(today, presets);
-      checkScheduleNotifications({
-        todaysBlocks,
-        config: notificationConfig,
-        dateStr: today,
-        onInAppToast: (toast) => {
-          setInAppToast(toast);
-          setTimeout(() => {
-            setInAppToast((prev) => (prev && prev.id === toast.id ? null : prev));
-          }, 6000);
-        },
-      });
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [notificationConfig, presets, isReady, getBlocksForDate]);
+    return () => {
+      stopTimer();
+    };
+  }, [alarms, activeAlarm, isReady, notificationConfig, presets, getBlocksForDate]);
 
   // ─── HASH NAVIGATION & MODAL CONTROLS ───────────────────────────────────────
   useEffect(() => {

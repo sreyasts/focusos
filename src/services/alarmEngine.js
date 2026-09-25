@@ -59,31 +59,56 @@ function getMasterDestination(ctx) {
   return activeCompressor || ctx.destination;
 }
 
+let silentAudioEl = null;
+
 /**
- * Starts an inaudible audio carrier to keep the mobile browser's audio session active.
- * This signals the mobile OS (iOS & Android) that the app is an active media session,
- * which prevents the browser power manager from freezing timer threads when locked.
+ * Starts an inaudible audio carrier and active MediaSession to keep the mobile OS from freezing
+ * timer threads and audio contexts when the device screen locks or is placed in a pocket.
  */
 export function startAudioKeepAlive() {
   try {
     const ctx = getAudioContext();
-    if (!ctx) return;
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
 
-    if (ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
+      if (!keepAliveOsc) {
+        keepAliveOsc = ctx.createOscillator();
+        keepAliveGain = ctx.createGain();
+
+        // Completely inaudible amplitude (0.00002) at 35Hz
+        keepAliveGain.gain.setValueAtTime(0.00002, ctx.currentTime);
+        keepAliveOsc.frequency.setValueAtTime(35, ctx.currentTime);
+
+        keepAliveOsc.connect(keepAliveGain);
+        keepAliveGain.connect(ctx.destination);
+        keepAliveOsc.start();
+      }
     }
 
-    if (!keepAliveOsc) {
-      keepAliveOsc = ctx.createOscillator();
-      keepAliveGain = ctx.createGain();
+    // HTML5 Audio silent loop for mobile OS media framework immunity
+    if (typeof window !== 'undefined' && !silentAudioEl) {
+      silentAudioEl = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+      silentAudioEl.loop = true;
+      silentAudioEl.volume = 0.0001;
+      silentAudioEl.setAttribute('playsinline', '');
+      silentAudioEl.setAttribute('webkit-playsinline', '');
 
-      // Completely inaudible amplitude (0.00002) at 35Hz
-      keepAliveGain.gain.setValueAtTime(0.00002, ctx.currentTime);
-      keepAliveOsc.frequency.setValueAtTime(35, ctx.currentTime);
+      const playPromise = silentAudioEl.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
+      }
 
-      keepAliveOsc.connect(keepAliveGain);
-      keepAliveGain.connect(ctx.destination);
-      keepAliveOsc.start();
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'TYMVERA Active Routine Monitor',
+          artist: 'Section Alerts & Alarms Armed',
+          album: 'TYMVERA',
+          artwork: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
+        });
+      }
     }
   } catch (e) {
     // Keep-alive is best-effort
