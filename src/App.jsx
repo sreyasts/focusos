@@ -21,6 +21,8 @@ import {
   dispatchNotification,
   requestNotificationPermission,
   dispatchAlarmNativeNotification,
+  getNotificationPermissionStatus,
+  isNotificationGranted,
 } from "./services/notificationEngine";
 
 import { startBackgroundWorkerTimer } from "./services/timerWorker";
@@ -862,6 +864,8 @@ function TYMVERA() {
   const [notificationPermission, setNotificationPermission] = useState(
     typeof window !== "undefined" && "Notification" in window ? Notification.permission : "default"
   );
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [testingCountdown, setTestingCountdown] = useState(null);
 
   // Authentication & Cloud Sync State
   const [currentUser, setCurrentUser] = useState(null);
@@ -923,6 +927,10 @@ function TYMVERA() {
     const handleVisChange = () => {
       startAudioKeepAlive();
       setNow(new Date());
+
+      if (typeof window !== "undefined" && "Notification" in window) {
+        setNotificationPermission(Notification.permission);
+      }
 
       // If app is placed in background or screen is locked, ensure service worker has latest schedule
       if (document.visibilityState === "hidden") {
@@ -3224,6 +3232,117 @@ function TYMVERA() {
     );
   };
 
+  // ─── DELAYED LOCK SCREEN TEST (5s) ──────────────────────────────────────────
+  const triggerDelayedLockScreenTest = async () => {
+    let perm = notificationPermission;
+    if (perm !== "granted") {
+      const res = await requestNotificationPermission();
+      perm = res.status;
+      setNotificationPermission(perm);
+      if (perm === "denied") {
+        setShowPermissionModal(true);
+        return;
+      }
+      if (perm !== "granted") return;
+    }
+
+    setNotificationConfig((prev) => ({ ...prev, enabled: true }));
+    startAudioKeepAlive();
+
+    let remaining = 5;
+    setTestingCountdown(remaining);
+
+    const timer = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(timer);
+        setTestingCountdown(null);
+        dispatchNotification({
+          title: "⚡ TYMVERA Lock Screen Test",
+          body: "Section alerts and obsidian alarms are active on your lock screen with sound & haptics!",
+          onInAppToast: setInAppToast,
+        });
+      } else {
+        setTestingCountdown(remaining);
+      }
+    }, 1000);
+  };
+
+  // ─── RENDER: NOTIFICATION PERMISSION GUIDE MODAL ────────────────────────────
+  const renderPermissionModal = () => {
+    if (!showPermissionModal) return null;
+
+    return (
+      <div className="fixed inset-0 z-[5000] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+        <div className={`${themeColors.surface} border ${themeColors.border} rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative`}>
+          <button
+            onClick={() => setShowPermissionModal(false)}
+            className="absolute top-5 right-5 text-gray-400 hover:text-gray-700 dark:hover:text-white"
+          >
+            <Icon name="close" size={20} />
+          </button>
+
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold">
+              <Icon name="notifications" size={22} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-gray-900 dark:text-white">Enable Notifications</h3>
+              <p className="text-xs text-gray-500">Unblock in Chrome in 2 steps</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 text-xs text-gray-600 dark:text-gray-300 mb-6">
+            <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-gray-50 dark:bg-[#151515] border border-gray-100 dark:border-[#222]">
+              <span className="w-5 h-5 rounded-full bg-blue-500 text-white font-black text-[11px] flex items-center justify-center shrink-0">1</span>
+              <div>
+                <div className="font-bold text-gray-900 dark:text-white mb-0.5">Tap the Site Icon in Address Bar</div>
+                <div>At top of Chrome: tap the 🔒 lock or tune icon next to <span className="font-mono text-blue-500 font-bold">tymvera.web.app</span></div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-gray-50 dark:bg-[#151515] border border-gray-100 dark:border-[#222]">
+              <span className="w-5 h-5 rounded-full bg-blue-500 text-white font-black text-[11px] flex items-center justify-center shrink-0">2</span>
+              <div>
+                <div className="font-bold text-gray-900 dark:text-white mb-0.5">Set Notifications to "Allow"</div>
+                <div>Tap <span className="font-semibold text-gray-900 dark:text-white">Permissions</span> or <span className="font-semibold text-gray-900 dark:text-white">Site Settings</span> and toggle Notifications <span className="text-emerald-500 font-bold">ON</span>.</div>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={async () => {
+              if (typeof window !== "undefined" && "Notification" in window) {
+                const current = Notification.permission;
+                setNotificationPermission(current);
+                if (current === "granted") {
+                  setNotificationConfig((prev) => ({ ...prev, enabled: true }));
+                  setShowPermissionModal(false);
+                  playNotificationChime(1.0);
+                  dispatchNotification({
+                    title: "⚡ TYMVERA Alerts Active",
+                    body: "Section alerts and obsidian alarms are now active with sound.",
+                    onInAppToast: setInAppToast,
+                  });
+                } else {
+                  const res = await requestNotificationPermission();
+                  setNotificationPermission(Notification.permission);
+                  if (res.status === "granted") {
+                    setNotificationConfig((prev) => ({ ...prev, enabled: true }));
+                    setShowPermissionModal(false);
+                  }
+                }
+              }
+            }}
+            className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shadow-lg shadow-blue-500/25 active:scale-95 transition-all"
+          >
+            I've Enabled It • Check Status
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // ─── RENDER: CONFETTI BURST ─────────────────────────────────────────────────
   const renderConfetti = () => {
     return (
@@ -3380,43 +3499,69 @@ function TYMVERA() {
           "Notification" in window &&
           notificationPermission !== "granted" && (
             <div className="px-4 mb-4">
-              <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between gap-3 shadow-sm backdrop-blur-md">
-                <div className="flex items-center gap-3 min-w-0">
-                  <img
-                    src="/icon-192.png"
-                    alt="TYMVERA"
-                    className="w-9 h-9 rounded-xl object-contain shrink-0 shadow-sm"
-                  />
-                  <div className="min-w-0">
-                    <div className="text-xs font-black text-gray-900 dark:text-white truncate">
-                      Enable Section Alerts & Alarms
+              {notificationPermission === "denied" ? (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 shadow-sm backdrop-blur-md">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                      <Icon name="warning" size={20} />
                     </div>
-                    <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-                      Receive sound & notifications when routine blocks start and finish.
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-amber-600 dark:text-amber-400 truncate">
+                        Notifications Blocked by Browser
+                      </div>
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                        Tap here for 2-step guide to unblock in Chrome settings.
+                      </div>
                     </div>
                   </div>
+                  <button
+                    onClick={() => setShowPermissionModal(true)}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shrink-0 shadow-md shadow-amber-500/25 active:scale-95 transition-all"
+                  >
+                    How to Fix
+                  </button>
                 </div>
-                <button
-                  onClick={async () => {
-                    const granted = await requestNotificationPermission();
-                    if (typeof window !== "undefined" && "Notification" in window) {
-                      setNotificationPermission(Notification.permission);
-                    }
-                    if (granted) {
-                      setNotificationConfig((prev) => ({ ...prev, enabled: true }));
-                      playNotificationChime(1.0);
-                      dispatchNotification({
-                        title: "⚡ TYMVERA Alerts Active",
-                        body: "Milestone alerts and obsidian alarms are now active with sound.",
-                        onInAppToast: setInAppToast,
-                      });
-                    }
-                  }}
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shrink-0 shadow-md shadow-blue-500/25 active:scale-95 transition-all"
-                >
-                  Allow Alerts
-                </button>
-              </div>
+              ) : (
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-between gap-3 shadow-sm backdrop-blur-md">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src="/icon-192.png"
+                      alt="TYMVERA"
+                      className="w-9 h-9 rounded-xl object-contain shrink-0 shadow-sm"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-gray-900 dark:text-white truncate">
+                        Enable Section Alerts & Alarms
+                      </div>
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                        Receive sound & notifications when routine blocks start and finish.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const res = await requestNotificationPermission();
+                      if (typeof window !== "undefined" && "Notification" in window) {
+                        setNotificationPermission(Notification.permission);
+                      }
+                      if (res.status === "granted") {
+                        setNotificationConfig((prev) => ({ ...prev, enabled: true }));
+                        playNotificationChime(1.0);
+                        dispatchNotification({
+                          title: "⚡ TYMVERA Alerts Active",
+                          body: "Milestone alerts and obsidian alarms are now active with sound.",
+                          onInAppToast: setInAppToast,
+                        });
+                      } else if (res.status === "denied") {
+                        setShowPermissionModal(true);
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black shrink-0 shadow-md shadow-blue-500/25 active:scale-95 transition-all"
+                  >
+                    Allow Alerts
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -4225,11 +4370,31 @@ function TYMVERA() {
           Instant & Advance Notifications
         </div>
         <div className={`${themeColors.surface} border ${themeColors.border} rounded-[32px] overflow-hidden shadow-sm mb-8`}>
-          {/* Main Toggle */}
+          {/* Main Toggle & Live Status Badge */}
           <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-[#222]">
             <div>
-              <div className="text-base font-bold text-gray-900 dark:text-white">
-                Task Milestone Notifications
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold text-gray-900 dark:text-white">
+                  Task Milestone Notifications
+                </span>
+                {notificationPermission === "granted" ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    ACTIVE
+                  </span>
+                ) : notificationPermission === "denied" ? (
+                  <button
+                    onClick={() => setShowPermissionModal(true)}
+                    className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1 active:scale-95"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                    BLOCKED (FIX)
+                  </button>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gray-500/10 text-gray-400 border border-gray-500/20">
+                    NOT ALLOWED
+                  </span>
+                )}
               </div>
               <div className="text-xs font-medium text-gray-500 mt-1">
                 Alerts for task starts, finishes & handovers
@@ -4239,9 +4404,12 @@ function TYMVERA() {
             <button
               onClick={async () => {
                 if (!notificationConfig.enabled) {
-                  const granted = await requestNotificationPermission();
-                  if (!granted && typeof window !== "undefined" && "Notification" in window && Notification.permission === "denied") {
-                    alert("Please enable notification permissions in your browser or device settings.");
+                  const res = await requestNotificationPermission();
+                  if (typeof window !== "undefined" && "Notification" in window) {
+                    setNotificationPermission(Notification.permission);
+                  }
+                  if (res.status === "denied") {
+                    setShowPermissionModal(true);
                   }
                   setNotificationConfig({ ...notificationConfig, enabled: true });
                   playNotificationChime();
@@ -4260,6 +4428,21 @@ function TYMVERA() {
               />
             </button>
           </div>
+
+          {/* Blocked Permission Alert Banner inside Settings */}
+          {notificationPermission === "denied" && (
+            <div className="p-4 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between gap-3">
+              <div className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                ⚠️ Notifications are blocked in your browser. Chrome won't send alerts until unblocked.
+              </div>
+              <button
+                onClick={() => setShowPermissionModal(true)}
+                className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-black shrink-0 active:scale-95"
+              >
+                How to Fix
+              </button>
+            </div>
+          )}
 
           {/* Lead Time Options */}
           {notificationConfig.enabled && (
@@ -4323,29 +4506,46 @@ function TYMVERA() {
             </div>
           )}
 
-          {/* Test Notification Button */}
-          <div className="p-4 bg-gray-50/50 dark:bg-[#181818]/50 flex justify-between items-center">
-            <span className="text-xs font-bold text-gray-500">TYMVERA Sound & Alert Preview</span>
-            <div className="flex items-center gap-3">
+          {/* Test & Verification Controls */}
+          <div className="p-4 bg-gray-50/50 dark:bg-[#181818]/50 flex flex-wrap justify-between items-center gap-3">
+            <span className="text-xs font-bold text-gray-500">Alert Diagnostics & Tests</span>
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={() => playNotificationChime()}
-                className="text-xs font-black text-gray-600 dark:text-gray-300 flex items-center gap-1 hover:underline"
+                className="px-2.5 py-1.5 rounded-xl bg-gray-100 dark:bg-[#222] text-xs font-black text-gray-700 dark:text-gray-300 flex items-center gap-1 active:scale-95 transition-all"
               >
-                <Icon name="music_note" size={16} /> Play Chime
+                <Icon name="music_note" size={15} /> Chime
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  let perm = notificationPermission;
+                  if (perm !== "granted") {
+                    const res = await requestNotificationPermission();
+                    perm = res.status;
+                    setNotificationPermission(perm);
+                    if (perm === "denied") {
+                      setShowPermissionModal(true);
+                      return;
+                    }
+                  }
                   dispatchNotification({
-                    title: "⚡ TYMVERA Milestone Alert",
-                    body: "Schedule transitions and alarms are operating with obsidian precision.",
+                    title: "⚡ TYMVERA Section Alert",
+                    body: "Routine milestone alerts and obsidian resonance are operating with precision.",
                     onInAppToast: setInAppToast,
                   });
                 }}
-                className="text-xs font-black text-blue-500 flex items-center gap-1.5 hover:underline"
+                className="px-3 py-1.5 rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 text-xs font-black flex items-center gap-1 active:scale-95 transition-all border border-blue-500/20"
               >
-                <Icon name="send" size={16} /> Test Alert
+                <Icon name="send" size={15} /> Instant Alert
+              </button>
+              <button
+                type="button"
+                onClick={triggerDelayedLockScreenTest}
+                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-black flex items-center gap-1 active:scale-95 transition-all shadow-md shadow-blue-500/20"
+              >
+                <Icon name="phone_android" size={15} /> Test on Lock Screen (5s)
               </button>
             </div>
           </div>
@@ -4768,9 +4968,30 @@ function TYMVERA() {
             })}
           </div>
 
+          {/* Lock Screen Test Countdown Banner */}
+          {testingCountdown !== null && (
+            <div className="fixed top-4 left-4 right-4 z-[9999] max-w-sm mx-auto shadow-2xl animate-bounce">
+              <div className="p-4 rounded-3xl bg-blue-600 text-white border border-white/20 shadow-xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-2xl bg-white text-blue-600 flex items-center justify-center font-black text-xl shadow-inner">
+                    {testingCountdown}
+                  </span>
+                  <div>
+                    <div className="text-xs font-black">LOCK YOUR PHONE NOW!</div>
+                    <div className="text-[11px] text-blue-100">
+                      Alert arrives on lock screen in {testingCountdown}s
+                    </div>
+                  </div>
+                </div>
+                <Icon name="phone_android" size={24} className="text-white shrink-0" />
+              </div>
+            </div>
+          )}
+
           {/* Overlays & Modals */}
           {renderInAppToast()}
           {renderAlarmModal()}
+          {renderPermissionModal()}
           {renderFirebaseModal()}
           {renderBackupModal()}
           {renderShareCardModal()}

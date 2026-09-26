@@ -27,39 +27,91 @@ const calcDurationMins = (start, end) => {
 };
 
 /**
+/**
+ * Check live notification support and permission status
+ */
+export function getNotificationPermissionStatus() {
+  if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+  return Notification.permission;
+}
+
+export function isNotificationGranted() {
+  return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
+}
+
+/**
  * Safely request native notification permissions across all browsers (Desktop, Android TWA/PWA, iOS)
  */
 export async function requestNotificationPermission() {
   if (typeof window === 'undefined' || !('Notification' in window)) {
-    return false;
+    return { supported: false, status: 'unsupported' };
   }
   if (Notification.permission === 'granted') {
-    return true;
+    return { supported: true, status: 'granted' };
   }
+  if (Notification.permission === 'denied') {
+    return { supported: true, status: 'denied' };
+  }
+
   try {
-    let perm;
-    // Handle both modern Promise and legacy callback signatures
-    const req = Notification.requestPermission((result) => {
-      perm = result;
-    });
-    if (req && typeof req.then === 'function') {
-      perm = await req;
-    }
-    return perm === 'granted' || Notification.permission === 'granted';
+    const result = await Notification.requestPermission();
+    return { supported: true, status: result || Notification.permission };
   } catch (err) {
-    console.warn('[NotificationEngine] Permission request error:', err);
-    return Notification.permission === 'granted';
+    try {
+      let legacyRes = 'default';
+      Notification.requestPermission((res) => {
+        legacyRes = res;
+      });
+      return { supported: true, status: Notification.permission || legacyRes };
+    } catch (e) {
+      return { supported: true, status: Notification.permission };
+    }
   }
+}
+
+/**
+ * Robust native notification dispatcher: prioritizes ServiceWorkerRegistration.showNotification()
+ * (required on Android Chrome), avoids hanging on SW ready, and falls back gracefully to Notification API.
+ */
+async function showNativeNotification(title, options) {
+  if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+    return false;
+  }
+
+  // 1. Try Service Worker showNotification directly (fastest on mobile PWA & Android)
+  if ('serviceWorker' in navigator) {
+    try {
+      let reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) {
+        reg = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('SW ready timeout')), 1500)),
+        ]);
+      }
+      if (reg && typeof reg.showNotification === 'function') {
+        await reg.showNotification(title, options);
+        return true;
+      }
+    } catch (swErr) {
+      console.warn('[NotificationEngine] SW showNotification error:', swErr);
+    }
+  }
+
+  // 2. Desktop fallback (Chrome desktop, Firefox, Safari)
+  try {
+    new Notification(title, options);
+    return true;
+  } catch (notifErr) {
+    console.warn('[NotificationEngine] Desktop Notification fallback failed:', notifErr);
+  }
+
+  return false;
 }
 
 /**
  * High-urgency native lock-screen alert for Wake and Sleep alarms
  */
-export function dispatchAlarmNativeNotification({ title, subtitle }) {
-  if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
-    return;
-  }
-
+export async function dispatchAlarmNativeNotification({ title, subtitle }) {
   const options = {
     body: subtitle,
     icon: '/icon-192.png',
@@ -72,25 +124,13 @@ export function dispatchAlarmNativeNotification({ title, subtitle }) {
     data: { url: '/' },
   };
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.ready
-      .then((reg) => reg.showNotification(title, options))
-      .catch(() => {
-        try {
-          new Notification(title, options);
-        } catch (e) {}
-      });
-  } else {
-    try {
-      new Notification(title, options);
-    } catch (e) {}
-  }
+  return showNativeNotification(title, options);
 }
 
 /**
  * Dispatch section milestone notification with official app logo and theme details
  */
-export function dispatchNotification({
+export async function dispatchNotification({
   title,
   body,
   icon = '/icon-192.png',
@@ -113,33 +153,19 @@ export function dispatchNotification({
   }
 
   // 3. Dispatch native Android PWA / Desktop notification
-  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-    const options = {
-      body,
-      icon,
-      badge,
-      vibrate: [180, 80, 180, 80, 240],
-      tag,
-      renotify: true,
-      requireInteraction: false,
-      silent: false,
-      data: { url: '/' },
-    };
+  const options = {
+    body,
+    icon,
+    badge,
+    vibrate: [250, 100, 250, 100, 350],
+    tag,
+    renotify: true,
+    requireInteraction: false,
+    silent: false,
+    data: { url: '/' },
+  };
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready
-        .then((reg) => reg.showNotification(title, options))
-        .catch(() => {
-          try {
-            new Notification(title, options);
-          } catch (e) {}
-        });
-    } else {
-      try {
-        new Notification(title, options);
-      } catch (e) {}
-    }
-  }
+  return showNativeNotification(title, options);
 }
 
 /**
